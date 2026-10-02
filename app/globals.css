@@ -1,26 +1,77 @@
 @import "tailwindcss";
 
+/* Paleta: #FFFFFF #FFD700 #800080 #FF0000 #00BFFF #800020 #CD7F32 */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #ffffff;
+  --fg: #1f1424;
+  --muted: #6b5b73;
+  --surface: #f7f2f8;
+  --border: #e3d7e6;
+  --header: #800080;
+  --on-header: #ffffff;
+  --primary: #800080;
+  --on-primary: #ffffff;
+  --accent: #ffd700;
+  --on-accent: #1f1424;
+  --danger: #ff0000;
+  --info: #00bfff;
+  --on-info: #0b1a22;
+  --wine: #800020;
+  --bronze: #cd7f32;
+  --on-bronze: #1f1424;
+  --link: #800080;
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg: #150910;
+  --fg: #f6eef8;
+  --muted: #b9a6c0;
+  --surface: #240f1c;
+  --border: #4a2038;
+  --header: #800020;
+  --link: #ffd700;
+  color-scheme: dark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-bg: var(--bg);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-surface: var(--surface);
+  --color-line: var(--border);
+  --color-header: var(--header);
+  --color-on-header: var(--on-header);
+  --color-primary: var(--primary);
+  --color-on-primary: var(--on-primary);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-on-info: var(--on-info);
+  --color-wine: var(--wine);
+  --color-bronze: var(--bronze);
+  --color-on-bronze: var(--on-bronze);
+  --color-link: var(--link);
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+a { color: var(--link); }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* Ficha de posición: hoja inferior en móvil, tarjeta centrada en escritorio */
+dialog.sheet {
+  margin: auto auto 0; width: 100%; max-width: 100%; max-height: 80vh;
+  border: 0; padding: 0; border-radius: 1.5rem 1.5rem 0 0;
+  background: var(--bg); color: var(--fg);
+}
+dialog.sheet::backdrop { background: rgb(0 0 0 / 0.65); backdrop-filter: blur(3px); }
+@media (min-width: 769px) {
+  dialog.sheet { margin: auto; max-width: 28rem; border-radius: 1rem; }
 }
