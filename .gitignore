@@ -43,3 +43,6 @@ next-env.d.ts
 # env
 .env*
 !.env.example
+
+# Archivos temporales de la CLI de Supabase (los crea `supabase link`)
+supabase/.temp/

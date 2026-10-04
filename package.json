@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test:db": "node --test supabase/tests/rls.test.mjs",
     "seed:assets": "tsx --env-file=.env.local scripts/upload-seed-assets.mts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
