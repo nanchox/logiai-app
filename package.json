@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:db": "node --test supabase/tests/rls.test.mjs",
-    "seed:assets": "tsx --env-file=.env.local scripts/upload-seed-assets.ts",
+    "seed:assets": "tsx --env-file=.env.local scripts/upload-seed-assets.mts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -1,5 +1,5 @@
 // Sube las imágenes del prototipo (legacy/*.png) al bucket "maps" en las rutas que ya referencia la carga inicial.
-// Uso: npx tsx --env-file=.env.local scripts/upload-seed-assets.ts
+// Uso: npx tsx --env-file=.env.local scripts/upload-seed-assets.mts
 import { readFile } from "node:fs/promises";
 import { createClient } from "@supabase/supabase-js";
 
