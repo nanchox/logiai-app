@@ -12,6 +12,8 @@ type Props = { siteSlug: string; locationId: string; maps: ViewerMap[]; current:
 /** Alta, reemplazo, renombrado y baja de mapas y zonas de un espacio. */
 export function MapAdmin({ siteSlug, locationId, maps, current, open, onChanged }: Props) {
   const sb = createClient();
+  // Abierto desde el inicio si el espacio no tiene mapas; después solo lo cambia el usuario (no se cierra al subir el primero).
+  const [initiallyOpen] = useState(!!open);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -27,7 +29,7 @@ export function MapAdmin({ siteSlug, locationId, maps, current, open, onChanged 
   }
 
   return (
-    <details open={open} className="rounded-2xl border border-line bg-surface p-4">
+    <details open={initiallyOpen} className="rounded-2xl border border-line bg-surface p-4">
       <summary className="cursor-pointer font-bold">Mapas y zonas de este espacio</summary>
       <div className="mt-4 space-y-5">
         {current && (
