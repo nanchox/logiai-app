@@ -12,7 +12,7 @@ export type CurrentUser = {
   isAdmin: boolean;
   isHead: boolean;
   leaderSites: Site[];
-  membership: { role: string; groupName: string; service: string; site: Site } | null;
+  membership: { role: string; groupName: string; service: string; day: string; shift: string; site: Site } | null;
   /** Etiqueta principal del rol, para mostrar en la interfaz. */
   roleLabel: string;
 };
@@ -53,6 +53,8 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
         role: m.role,
         groupName: m.groups.name,
         service: serviceLabel(m.groups.service_slots.day, m.groups.service_slots.shift),
+        day: m.groups.service_slots.day,
+        shift: m.groups.service_slots.shift,
         site: m.groups.service_slots.sites,
       }
     : null;

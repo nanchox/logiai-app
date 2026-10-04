@@ -273,3 +273,72 @@ test('anon no puede leer nada', async () => {
   await db.exec(`set role anon`);
   try { await denied(() => db.query(`select * from public.positions`), /permission denied/); } finally { await db.exec(`reset role`); }
 });
+
+// ───────────── Fase 2 ─────────────
+test('fase 2 · medios: solo https; YouTube solo de youtube.com/youtu.be; foto y enlace son excluyentes', async () => {
+  const pos = (await one(`select id from public.positions where code = '2'`)).id;
+  const ins = (kind, url, path) => db.query(`insert into public.position_media (position_id, kind, url, storage_path) values ($1, $2, $3, $4)`, [pos, kind, url, path]);
+  await ins('youtube', 'https://youtu.be/dQw4w9WgXcQ', null);
+  await ins('youtube', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', null);
+  await ins('link', 'https://docs.google.com/presentation/d/x', null);
+  await ins('foto', null, 'castellana/pos/a.jpg');
+  await denied(() => ins('youtube', 'https://vimeo.com/123', null), /check/);
+  await denied(() => ins('youtube', 'https://evil.com/youtube.com/x', null), /check/);
+  await denied(() => ins('link', 'javascript:alert(1)', null), /check/);
+  await denied(() => ins('link', 'http://inseguro.com', null), /check/);
+  await denied(() => ins('foto', 'https://x.com/a.jpg', 'a.jpg'), /check/);
+  await denied(() => ins('foto', null, null), /check/);
+  await denied(() => ins('link', null, null), /check/);
+});
+
+test('fase 2 · medios: los de la sede los ven todos; solo el líder/cabeza/admin los editan', async () => {
+  const pos = (await one(`select id from public.positions where code = '2'`)).id;
+  assert.equal(await as(U.vol1, () => count('position_media')), 4);
+  assert.equal(await as(U.volSuba, () => count('position_media')), 0);       // otra sede
+  assert.equal(await as(U.liderNogal, () => count('position_media')), 0);
+  const add = (uid) => as(uid, () => db.query(`insert into public.position_media (position_id, kind, url) values ($1, 'link', 'https://x.com/y')`, [pos]));
+  await denied(() => add(U.vol1), /row-level security/);
+  await denied(() => add(U.coord1), /row-level security/);
+  await denied(() => add(U.liderNogal), /row-level security/);
+  await add(U.liderCas);
+  await add(U.cabeza);
+  assert.equal(await as(U.vol1, async () => (await db.query(`delete from public.position_media where position_id = $1`, [pos])).affectedRows), 0);
+  assert.equal(await as(U.liderCas, async () => (await db.query(`delete from public.position_media where kind = 'link'`)).affectedRows), 3);   // el original + los dos agregados
+});
+
+test('fase 2 · flujos: visibles en su sede, editables por el líder; los pasos deben ser de la misma sede', async () => {
+  const flow = (await as(U.liderCas, () => db.query(`insert into public.flows (site_id, name, description) values ($1, 'Cuando se llena el Auditorio principal', 'Orden de overflow') returning id`, [U.sCas]))).rows[0].id;
+  const locs = Object.fromEntries((await rows(`select l.name || '@' || s.slug as k, l.id from public.locations l join public.sites s on s.id = l.site_id`)).map((r) => [r.k, r.id]));
+  const step = (uid, order, loc) => as(uid, () => db.query(`insert into public.flow_steps (flow_id, step_order, location_id, title, instructions) values ($1, $2, $3, $4, 'Dirigir a la gente')`, [flow, order, loc, `Paso ${order}`]));
+  await step(U.liderCas, 1, locs['Overflow piso 4@castellana']);
+  await step(U.liderCas, 2, locs['Overflow piso 5@castellana']);
+  await step(U.liderCas, 3, locs['Teatro@castellana']);
+  await denied(() => step(U.liderCas, 4, locs['Overflow@suba']), /misma sede/);                    // espacio de otra sede
+  await denied(() => step(U.liderCas, 2, locs['Salones@castellana']), /unique|duplicate/);          // orden repetido
+  await denied(() => step(U.vol1, 9, locs['Salones@castellana']), /row-level security/);
+  await denied(() => as(U.liderNogal, () => db.query(`insert into public.flows (site_id, name) values ($1, 'x')`, [U.sCas])), /row-level security/);
+  // visibilidad
+  assert.equal(await as(U.vol1, () => count('flow_steps')), 3);
+  assert.equal(await as(U.volSuba, () => count('flows')), 0);
+  assert.equal(await as(U.cabeza, () => count('flow_steps')), 3);
+  // reordenar intercambiando dos pasos en una sola sentencia (restricción diferible)
+  await as(U.liderCas, () => db.query(`update public.flow_steps set step_order = case step_order when 1 then 2 when 2 then 1 else step_order end where flow_id = $1 and step_order in (1, 2)`, [flow]));
+  assert.deepEqual((await rows(`select step_order from public.flow_steps where flow_id = $1 order by step_order`, [flow])).map((r) => r.step_order), [1, 2, 3]);
+  // si se borra un espacio, el paso se conserva sin espacio
+  await db.query(`delete from public.locations where id = $1`, [locs['Teatro@castellana']]);
+  assert.equal(await count('flow_steps', `location_id is null`), 1);
+});
+
+test('fase 2 · storage de fotos de posiciones y updated_at de mapas', async () => {
+  await db.exec(`insert into storage.objects (bucket_id, name) values ('position-media', 'castellana/p1/a.jpg'), ('position-media', 'suba/p1/b.jpg')`);
+  const names = (uid) => as(uid, async () => (await rows(`select name from storage.objects where bucket_id = 'position-media'`)).map((r) => r.name));
+  assert.deepEqual(await names(U.vol1), ['castellana/p1/a.jpg']);
+  assert.deepEqual(await names(U.volSuba), ['suba/p1/b.jpg']);
+  await as(U.liderCas, () => db.query(`insert into storage.objects (bucket_id, name) values ('position-media', 'castellana/p1/c.jpg')`));
+  await denied(() => as(U.vol1, () => db.query(`insert into storage.objects (bucket_id, name) values ('position-media', 'castellana/p1/d.jpg')`)), /row-level security/);
+  await denied(() => as(U.liderCas, () => db.query(`insert into storage.objects (bucket_id, name) values ('position-media', 'suba/p1/e.jpg')`)), /row-level security/);
+  const before = (await one(`select updated_at from public.maps where zone_id is null and image_path like 'castellana/%'`)).updated_at;
+  await new Promise((r) => setTimeout(r, 15));
+  await as(U.liderCas, () => db.query(`update public.maps set image_version = image_version + 1 where zone_id is null and image_path like 'castellana/%'`));
+  assert.ok((await one(`select updated_at from public.maps where zone_id is null and image_path like 'castellana/%'`)).updated_at > before);
+});

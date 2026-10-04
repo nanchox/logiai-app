@@ -75,3 +75,10 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.65); backdrop-filter: blur(3p
 @media (min-width: 769px) {
   dialog.sheet { margin: auto; max-width: 28rem; border-radius: 1rem; }
 }
+
+dialog.sheet[data-size="lg"] { max-height: 90vh; }
+@media (min-width: 769px) {
+  dialog.sheet[data-size="lg"] { max-width: 42rem; }
+  dialog.sheet[data-size="xl"] { max-width: 60rem; background: #000; }
+}
+dialog.sheet[data-size="xl"] { background: #000; color: #fff; max-height: 95vh; border-radius: 1rem; margin: auto; }
