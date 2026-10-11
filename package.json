@@ -8,8 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "test:db": "node --test supabase/tests/rls.test.mjs",
-    "seed:assets": "tsx --env-file=.env.local scripts/upload-seed-assets.ts",
-    "typecheck": "tsc --noEmit"
+    "seed:assets": "tsx --env-file=.env.local scripts/upload-seed-assets.mts",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test:unit": "node --import tsx --test \"lib/**/*.test.ts\"",
+    "test": "npm run test:unit && npm run test:db"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

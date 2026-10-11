@@ -1,6 +1,6 @@
 -- LogiAI · Fase 1 · Carga inicial (generada con scripts/generate-seed.mjs desde legacy/index.html)
 -- Sedes, auditorios/salones, mapa y posiciones de Castellana · Auditorio principal, y correos de arranque.
--- Las imágenes se suben después con: npx tsx --env-file=.env.local scripts/upload-seed-assets.ts
+-- Las imágenes se suben después con: npx tsx --env-file=.env.local scripts/upload-seed-assets.mts
 
 insert into public.sites (slug, name, sort) values
   ('castellana', 'Castellana', 1), ('nogal', 'Nogal', 2), ('suba', 'Suba', 3), ('campestre', 'Campestre', 4);
