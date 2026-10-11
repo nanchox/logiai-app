@@ -1,23 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 
 export function GoogleSignInButton() {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  async function signIn() {
+  function signIn() {
     setLoading(true);
-    setError(null);
-    const { error } = await createClient().auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    });
-    if (error) {
-      setError("No se pudo iniciar con Google. Intenta de nuevo.");
-      setLoading(false);
-    }
+    window.location.assign("/auth/signin");
   }
 
   return (
@@ -36,7 +26,6 @@ export function GoogleSignInButton() {
         </svg>
         {loading ? "Conectando…" : "Continuar con Google"}
       </button>
-      {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
     </div>
   );
 }
