@@ -220,7 +220,7 @@ test('perfiles: nadie puede darse permisos', async () => {
   await denied(() => as(U.vol1, () => db.query(`update public.profiles set is_admin = true where user_id = $1`, [U.vol1])), /permission denied/);
   await denied(() => as(U.vol1, () => db.query(`update public.profiles set is_head = true where user_id = $1`, [U.vol1])), /permission denied/);
   assert.equal(await as(U.vol1, async () => (await db.query(`update public.profiles set full_name = 'x' where user_id = $1`, [U.coord1])).affectedRows), 0);
-  await denied(() => as(U.admin, () => db.query(`insert into public.profiles (user_id, email) values (gen_random_uuid(), 'zz@x.com')`)), /permission denied|row-level security|violates/);
+  await denied(() => as(U.admin, () => db.query(`insert into public.profiles (user_id, full_name) values (gen_random_uuid(), 'zz')`)), /permission denied|row-level security|violates/);
   // nadie se nombra líder de sede
   await denied(() => as(U.liderNogal, () => db.query(`insert into public.site_leaders (user_id, site_id) values ($1, $2)`, [U.liderNogal, U.sCas])), /row-level security/);
   await denied(() => as(U.vol1, () => db.query(`insert into public.site_leaders (user_id, site_id) values ($1, $2)`, [U.vol1, U.sCas])), /row-level security|no puede pertenecer/);
@@ -341,4 +341,172 @@ test('fase 2 · storage de fotos de posiciones y updated_at de mapas', async () 
   await new Promise((r) => setTimeout(r, 15));
   await as(U.liderCas, () => db.query(`update public.maps set image_version = image_version + 1 where zone_id is null and image_path like 'castellana/%'`));
   assert.ok((await one(`select updated_at from public.maps where zone_id is null and image_path like 'castellana/%'`)).updated_at > before);
+});
+
+// ───────────── Endurecimiento (cierre de fases 1 y 2) ─────────────
+// Estas dos pruebas también protegen las migraciones futuras: fallan si una función nueva queda abierta
+// a visitantes sin sesión o si una clave foránea queda sin índice.
+test('endurecimiento · ninguna función de public es ejecutable por anon o PUBLIC; solo las auxiliares por authenticated', async () => {
+  const fns = await rows(`
+    select p.proname, p.prorettype = 'trigger'::regtype as is_trigger, p.prosecdef,
+           has_function_privilege('anon', p.oid, 'execute') as anon_ok,
+           has_function_privilege('authenticated', p.oid, 'execute') as auth_ok,
+           coalesce(p.proacl::text, '') ~ '(^|,)=X' or p.proacl is null as public_ok,
+           (select count(*) from unnest(coalesce(p.proconfig, '{}')) c where c like 'search_path=%') as sp
+    from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prokind = 'f'`);
+  assert.ok(fns.length >= 20, `se esperaban ≥20 funciones, hay ${fns.length}`);
+  for (const f of fns) {
+    assert.equal(f.anon_ok, false, `${f.proname}: la ejecuta anon`);
+    assert.equal(f.public_ok, false, `${f.proname}: la ejecuta PUBLIC`);
+    if (f.proname === 'hook_before_user_created' || f.is_trigger) assert.equal(f.auth_ok, false, `${f.proname}: no debe ejecutarla authenticated`);
+    else assert.equal(f.auth_ok, true, `${f.proname}: authenticated la necesita para las políticas RLS`);
+    assert.ok(Number(f.sp) >= 1, `${f.proname}: sin search_path fijo`);
+  }
+});
+
+test('endurecimiento · las políticas siguen funcionando y los triggers siguen disparando sin permiso de ejecución', async () => {
+  // anon no puede llamar las funciones por la API
+  await db.exec(`set role anon`);
+  try { await denied(() => db.query(`select public.site_id_by_slug('castellana')`), /permission denied/); } finally { await db.exec(`reset role`); }
+  // un usuario con sesión sí (lo usan las políticas)
+  assert.ok(await as(U.vol1, async () => (await one(`select public.site_id_by_slug('castellana') as id`)).id));
+  await denied(() => as(U.vol1, () => db.query(`select public.handle_new_user()`)), /permission denied|trigger functions/);
+  // el trigger de alta funciona aunque quien inserta en auth.users no pueda ejecutar la función
+  await db.exec(`create role signup_probe nologin; grant usage on schema auth to signup_probe; grant insert, select on auth.users to signup_probe;
+    insert into public.invitations (email, is_admin) values ('probe@x.com', false);`);
+  await db.exec(`set role signup_probe`);
+  try { await db.query(`insert into auth.users (email) values ('probe@x.com')`); } finally { await db.exec(`reset role`); }
+  assert.equal(await count('profile_private', `email = 'probe@x.com'`), 1);
+});
+
+test('endurecimiento · toda clave foránea tiene un índice que la cubra', async () => {
+  const bare = await rows(`
+    select c.conrelid::regclass::text || ' → ' || pg_get_constraintdef(c.oid) as fk
+    from pg_constraint c
+    where c.contype = 'f' and c.connamespace = 'public'::regnamespace
+      and not exists (select 1 from pg_index i where i.indrelid = c.conrelid and (i.indkey::int2[])[0:cardinality(c.conkey) - 1] = c.conkey)`);
+  assert.deepEqual(bare.map((r) => r.fk), []);
+});
+
+// ───────────── Fase 3 · Personas y grupos ─────────────
+const emailsSeenBy = (uid) => as(uid, async () => (await rows(`select email from public.profile_private order by email`)).map((r) => r.email));
+
+test('fase 3 · privacidad: cada quien ve su propio correo y solo los de las personas que administra', async () => {
+  // Grupo 1 de Castellana: coord1, coord2 (coordinadores), sup1, sup2 (supervisores; sup2 fue eliminado antes), vol1.
+  // Voluntario y supervisor: solo el suyo.
+  assert.deepEqual(await emailsSeenBy(U.vol1), ['vol1@x.com']);
+  assert.deepEqual(await emailsSeenBy(U.sup1), ['sup1@x.com']);
+  assert.deepEqual(await emailsSeenBy(U.volSuba), ['volsuba@x.com']);
+  // Coordinador: el suyo + supervisores y voluntarios de su grupo; NO el del otro coordinador ni los de otros grupos.
+  const coord = await emailsSeenBy(U.coord1);
+  assert.ok(coord.includes('coord1@x.com') && coord.includes('sup1@x.com') && coord.includes('vol1@x.com'));
+  assert.ok(!coord.includes('coord2@x.com'), 'un coordinador no ve el correo de otro coordinador');
+  assert.ok(!coord.includes('volsuba@x.com') && !coord.includes('lider.cas@x.com'));
+  // Líder de sede: su sede completa (incluidos coordinadores), no otras sedes ni otros líderes.
+  const lider = await emailsSeenBy(U.liderCas);
+  assert.ok(['coord1@x.com', 'coord2@x.com', 'sup1@x.com', 'vol1@x.com', 'lider.cas@x.com'].every((e) => lider.includes(e)));
+  assert.ok(!lider.includes('volsuba@x.com') && !lider.includes('lider.nogal@x.com'));
+  // Cabeza y admin: todos.
+  assert.equal((await emailsSeenBy(U.cabeza)).length, await count('profile_private'));
+  assert.equal((await emailsSeenBy(U.admin)).length, await count('profile_private'));
+  // Pero los nombres de su grupo sí los ven todos (para "Mi grupo").
+  const names = await as(U.vol1, async () => (await rows(`select full_name from public.profiles order by full_name`)).map((r) => r.full_name));
+  const groupNames = (await rows(`select p.full_name from public.memberships m join public.profiles p on p.user_id = m.user_id where m.group_id = $1 order by 1`, [U.gCas1])).map((r) => r.full_name);
+  assert.ok(groupNames.length >= 3);
+  assert.deepEqual(names, groupNames, 've los nombres de su grupo y de nadie más');
+  // Nadie puede escribir en la tabla privada; anon no la ve.
+  await denied(() => as(U.admin, () => db.query(`update public.profile_private set email = 'x@y.com' where user_id = $1`, [U.vol1])), /permission denied/);
+  await denied(() => as(U.liderCas, () => db.query(`insert into public.profile_private (user_id, email) values ($1, 'z@z.com')`, [U.vol1])), /permission denied/);
+  await db.exec(`set role anon`);
+  try { await denied(() => db.query(`select * from public.profile_private`), /permission denied/); } finally { await db.exec(`reset role`); }
+  // Ninguna otra tabla expone correos: invitaciones solo para quien administra el grupo.
+  assert.equal(await as(U.vol1, () => count('invitations')), 0);
+  assert.equal(await as(U.sup1, () => count('invitations')), 0);
+});
+
+test('fase 3 · mover y cambiar de rol: coordinador solo dentro de su grupo; líder en su sede; admin en cualquiera', async () => {
+  const move = (uid, who, gid, role) => as(uid, async () => (await db.query(`update public.memberships set group_id = $2, role = $3 where user_id = $1`, [who, gid, role])).affectedRows);
+  // Coordinador: cambia supervisor ↔ voluntario en su grupo, pero no a coordinador ni a otro grupo.
+  assert.equal(await move(U.coord1, U.sup1, U.gCas1, 'voluntario'), 1);
+  assert.equal(await move(U.coord1, U.sup1, U.gCas1, 'supervisor'), 1);
+  await denied(() => move(U.coord1, U.sup1, U.gCas2, 'supervisor'), /row-level security/);
+  await denied(() => move(U.coord1, U.vol1, U.gCas1, 'coordinador'), /row-level security|2 coordinadores/);
+  // Supervisor y voluntario no cambian nada.
+  assert.equal(await move(U.sup1, U.vol1, U.gCas1, 'supervisor'), 0);
+  // Líder de Castellana: mueve a un voluntario a otro grupo de su sede (como supervisor), no a otra sede.
+  assert.equal(await move(U.liderCas, U.vol1, U.gCas2, 'supervisor'), 1);
+  await denied(() => move(U.liderCas, U.vol1, U.gSuba1, 'voluntario'), /row-level security/);
+  // Admin: entre sedes.
+  assert.equal(await move(U.admin, U.vol1, U.gSuba1, 'voluntario'), 1);
+  assert.equal((await one(`select g.id = $2 as ok from public.memberships m join public.groups g on g.id = m.group_id where m.user_id = $1`, [U.vol1, U.gSuba1])).ok, true);
+  // …y vuelve (el resto de pruebas asume vol1 en Castellana · Grupo 1).
+  assert.equal(await move(U.admin, U.vol1, U.gCas1, 'voluntario'), 1);
+});
+
+test('fase 3 · eliminar de la aplicación: quién puede, y que no pueda volver a entrar', async () => {
+  const del = (uid, who) => as(uid, () => db.query(`select public.delete_person($1)`, [who]));
+  // Altas nuevas para eliminar.
+  await as(U.liderCas, async () => {
+    await db.query(`insert into public.invitations (email, group_id, group_role) values ('borrar1@x.com', $1, 'voluntario'), ('borrar2@x.com', $1, 'supervisor'), ('borrar3@x.com', $1, 'voluntario')`, [U.gCas1]);
+  });
+  await signup('borrar1', 'borrar1@x.com'); await signup('borrar2', 'borrar2@x.com'); await signup('borrar3', 'borrar3@x.com');
+  // Sin permiso: voluntario, supervisor, a uno mismo, otra sede, coordinador a otro coordinador, líder de otra sede.
+  await denied(() => del(U.vol1, U.borrar1), /No tienes permiso/);
+  await denied(() => del(U.sup1, U.borrar1), /No tienes permiso/);
+  await denied(() => del(U.borrar1, U.borrar1), /No tienes permiso/);
+  await denied(() => del(U.liderNogal, U.borrar1), /No tienes permiso/);
+  await denied(() => del(U.coord1, U.coord2), /No tienes permiso/);
+  await denied(() => del(U.coord1, U.liderCas), /No tienes permiso/);
+  await denied(() => del(U.liderCas, U.liderNogal), /No tienes permiso/);
+  await denied(() => del(U.liderCas, U.cabeza), /No tienes permiso/);
+  await denied(() => del(U.cabeza, U.admin), /No tienes permiso/);
+  await denied(() => del(U.admin, U.admin), /No tienes permiso/);   // ni a sí mismo
+  await denied(() => del(U.admin, '00000000-0000-4000-8000-0000000000ff'), /no existe/);
+  assert.equal(await count('profiles', `user_id = '${U.borrar1}'`), 1);
+  // Con permiso: coordinador (supervisor/voluntario de su grupo), líder (su sede), admin.
+  await del(U.coord1, U.borrar1);
+  await del(U.liderCas, U.borrar2);
+  await del(U.admin, U.borrar3);
+  for (const n of ['borrar1', 'borrar2', 'borrar3']) {
+    assert.equal(await count('profiles', `user_id = '${U[n]}'`), 0, `${n}: perfil`);
+    assert.equal(await count('profile_private', `user_id = '${U[n]}'`), 0, `${n}: correo`);
+    assert.equal(await count('memberships', `user_id = '${U[n]}'`), 0, `${n}: grupo`);
+    assert.equal(Number((await one(`select count(*)::int n from auth.users where id = $1`, [U[n]])).n), 0, `${n}: cuenta`);
+  }
+  // Sin invitación, no puede volver a entrar.
+  assert.equal(await count('invitations', `email like 'borrar%@x.com'`), 0);
+  await denied(() => signup('borrar1b', 'borrar1@x.com'), /no autorizado/i);
+  // …pero si se le vuelve a invitar, entra de nuevo normalmente.
+  await as(U.coord1, () => db.query(`insert into public.invitations (email, group_id, group_role) values ('borrar1@x.com', $1, 'voluntario')`, [U.gCas1]));
+  await signup('borrar1c', 'borrar1@x.com');
+  assert.equal(await count('memberships', `user_id = '${U.borrar1c}'`), 1);
+  // Líder: lo elimina la cabeza o el admin, no otro líder.
+  await del(U.cabeza, U.liderNogal);
+  assert.equal(await count('site_leaders', `user_id = '${U.liderNogal}'`), 0);
+  // Un segundo administrador sí puede eliminar al primero (siempre queda quien elimina); el primero no puede eliminarse.
+  await db.exec(`insert into public.invitations (email, is_admin) values ('admin2@x.com', true)`);
+  await signup('admin2', 'admin2@x.com');
+  await del(U.admin, U.admin2);
+  assert.equal(await count('profiles', `user_id = '${U.admin2}'`), 0);
+  assert.equal(await count('profiles', `is_admin`), 1);
+});
+
+test('fase 3 · horarios y grupos: el líder administra los de su sede; no se borra un grupo con integrantes', async () => {
+  const slotIn = (uid, siteId, day, shift) => as(uid, () => db.query(`insert into public.service_slots (site_id, day, shift) values ($1, $2, $3) returning id`, [siteId, day, shift]));
+  const { rows: [slot] } = await slotIn(U.liderCas, U.sCas, 'domingo', 'am');
+  await denied(() => slotIn(U.liderNogal, U.sCas, 'domingo', 'pm'), /row-level security/);
+  await denied(() => slotIn(U.vol1, U.sCas, 'domingo', 'pm'), /row-level security/);
+  await denied(() => slotIn(U.coord1, U.sCas, 'domingo', 'pm'), /row-level security/);
+  const grp = (uid, name) => as(uid, () => db.query(`insert into public.groups (service_slot_id, name) values ($1, $2) returning id`, [slot.id, name]));
+  const { rows: [g] } = await grp(U.liderCas, 'Grupo Nuevo');
+  await denied(() => grp(U.coord1, 'x'), /row-level security/);
+  // El coordinador y el voluntario ven los grupos que les corresponden, no los demás.
+  assert.equal(await as(U.vol1, () => count('groups', `id = '${g.id}'`)), 0);
+  assert.equal(await as(U.cabeza, () => count('groups', `id = '${g.id}'`)), 1);
+  // Un grupo con integrantes no se borra (ni a través del horario ni de la sede); uno vacío sí.
+  await denied(() => as(U.liderCas, () => db.query(`delete from public.groups where id = $1`, [U.gCas1])), /tiene integrantes/);
+  await denied(() => as(U.admin, () => db.query(`delete from public.service_slots where id = (select service_slot_id from public.groups where id = $1)`, [U.gCas1])), /tiene integrantes/);
+  await as(U.liderCas, () => db.query(`delete from public.groups where id = $1`, [g.id]));
+  await as(U.liderCas, () => db.query(`delete from public.service_slots where id = $1`, [slot.id]));
+  assert.equal(await count('groups', `id = '${g.id}'`), 0);
 });

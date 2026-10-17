@@ -14,7 +14,8 @@ export function explain(error: PgError | Error, fallback = "No se pudo completar
   if (e.code === "23505") return new Error("Ya existe un elemento con ese nombre o código.");
   if (e.code === "42501" || /row-level security|Unauthorized|403/i.test(e.message ?? "") || String(e.statusCode) === "403")
     return new Error("No tienes permiso para hacer esto.");
-  if (e.code === "23514") return new Error(e.message?.includes("misma sede") ? e.message : "Algún dato no es válido.");
+  // Los triggers de la base de datos devuelven mensajes ya redactados en español; las restricciones CHECK no.
+  if (e.code === "23514") return new Error(/violates check constraint/.test(e.message ?? "") ? "Algún dato no es válido." : (e.message ?? "Algún dato no es válido."));
   return new Error(e.message || fallback);
 }
 const must = <T>(r: { data: T; error: PgError }): T => {

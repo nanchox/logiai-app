@@ -2,19 +2,19 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "Ingresar" };
 
 const ERRORS: Record<string, string> = {
+  "sin-cuenta": "Tu cuenta ya no tiene acceso a la aplicación. Si crees que es un error, pide a tu coordinador o líder de sede que te agregue de nuevo.",
   "sin-invitacion": "Este correo no está autorizado. Pide a tu coordinador o líder de sede que te agregue.",
   oauth: "No se pudo completar el ingreso con Google. Intenta de nuevo.",
 };
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getClaims();
-  if (data?.claims) redirect("/");
+  // Solo se salta el login si la persona tiene cuenta en la aplicación (una sesión sin cuenta no cuenta).
+  if (await getCurrentUser()) redirect("/");
 
   const { error } = await searchParams;
   const message = typeof error === "string" ? ERRORS[error] : undefined;
