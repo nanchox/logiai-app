@@ -1,7 +1,7 @@
 # LogiAI
 
 Manual de logística y servicio de **El Lugar de Su Presencia**: mapas, posiciones, indicaciones, anuncios y chat con IA.
-El plan completo está en [`PLAN.md`](PLAN.md). Estado actual: **Fases 1 y 2** completas (base, login, permisos, manual con mapas, posiciones, fotos, videos y flujos). Siguen anuncios, grupos y rotación, y el chat de IA.
+El plan completo está en [`PLAN.md`](PLAN.md). Estado actual: **Fases 1, 2 y 3** completas (base, login, permisos, manual con mapas y posiciones, fotos, videos, flujos, y personas y grupos). Siguen anuncios, rotación y calendario, y el chat de IA.
 
 - **App:** Next.js 16 (App Router) en Vercel · **Datos, login y archivos:** Supabase
 - `legacy/` — prototipo original (HTML estático) y las imágenes de mapas de Castellana
@@ -55,9 +55,23 @@ Quienes pueden editar: **administrador, cabeza de ministerio y líder de la sede
 
 Quien no es de la sede no ve nada de ella, y las reglas las aplica la base de datos, no solo la interfaz.
 
-## Acceso y roles
-Nadie crea cuenta sin una fila en `invitations`. La migración 5 deja invitados al administrador y a la cabeza de ministerio.
-Hasta que exista la pantalla de *Usuarios y grupos*, los horarios, grupos y personas se dan de alta con SQL:
-usa [`supabase/snippets/alta-de-personas.sql`](supabase/snippets/alta-de-personas.sql) (probado; se puede repetir sin duplicar).
+## Personas y grupos
+Nadie crea cuenta sin una invitación (un correo agregado). Se administra en **Personas** (menú superior):
 
-Los roles globales (`is_admin`, `is_head`) solo se cambian con SQL o `service_role`; ningún usuario puede dárselos desde la app.
+| Quién | Qué puede hacer |
+|---|---|
+| **Coordinador** | En **su** grupo: agregar correos como Supervisor o Voluntario, cambiar entre esos dos roles y eliminar de la aplicación a supervisores y voluntarios. |
+| **Líder de sede** | En **todos los grupos de su sede**: agregar con cualquier rol (incluido Coordinador), mover personas entre grupos y horarios de su sede, y crear horarios y grupos. |
+| **Cabeza de ministerio** | Lo mismo en **todas las sedes**, y mover personas entre sedes. También invita y elimina líderes de sede. |
+| **Administrador** | Todo lo anterior, e invita o elimina a otras cabezas y administradores. |
+
+- **Agregar correos:** pega uno o varios (uno por línea o separados por comas), elige grupo y rol. La persona entra con Google usando ese correo y queda en su grupo con su rol. Los correos repetidos o inválidos se informan sin tocar nada.
+- **No se "quita de un grupo":** una persona está siempre en un solo grupo. Se puede **moverla** (a otro grupo, horario o sede), **cambiarle el rol** o **eliminarla de la aplicación**. Eliminar borra su cuenta y su invitación; si debe volver, hay que invitarla de nuevo. Su sesión abierta se cierra sola.
+- **Correos privados:** los correos viven en la tabla `profile_private`. Solo los ve cada persona (el suyo) y quien la administra (su coordinador, el líder de su sede, la cabeza y el administrador). Supervisores y voluntarios ven los **nombres** de su grupo en **Mi grupo**, nunca los correos. Lo hace cumplir la base de datos (RLS), no solo la pantalla.
+- **Grupos y horarios:** un horario es un día y una franja de una sede (con horas de llegada, inicio y fin); un grupo pertenece a uno. No se puede eliminar un grupo con integrantes: se mueven primero.
+- Los roles globales (administrador y cabeza) se dan invitando desde **Personas → Líderes y administración** (solo el administrador).
+
+## Actualizar una instalación existente
+La migración `20261019000001_people.sql` quita el correo de `profiles` y lo mueve a `profile_private`. Para no dejar la aplicación publicada sin poder leer el perfil, el orden es:
+1. Publica primero el código nuevo (fusiona el pull request y espera el despliegue de Vercel).
+2. Luego aplica las migraciones: `npx supabase db push`.

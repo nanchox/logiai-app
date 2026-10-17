@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { LocationTools, NewLocation } from "@/components/manual/LocationAdmin";
-import { getCurrentUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { LOCATION_KIND_LABEL } from "@/lib/labels";
 import { createClient } from "@/lib/supabase/server";
 
@@ -13,8 +13,7 @@ export async function generateMetadata({ params }: PageProps<"/manual/[site]">):
 
 export default async function SitePage({ params }: PageProps<"/manual/[site]">) {
   const { site: slug } = await params;
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  const user = await requireUser();
   const supabase = await createClient();
 
   const { data: site } = await supabase.from("sites").select("id, name").eq("slug", slug).maybeSingle();

@@ -1,16 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { FlowsClient, type FlowItem } from "@/components/manual/FlowsClient";
-import { getCurrentUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Flujos de ubicación" };
 
 export default async function FlowsPage({ params }: PageProps<"/manual/[site]/flujos">) {
   const { site: slug } = await params;
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  const user = await requireUser();
   const supabase = await createClient();
 
   const { data: site } = await supabase.from("sites").select("id, name").eq("slug", slug).maybeSingle();

@@ -46,7 +46,8 @@ Reglas que hace cumplir la base de datos (no solo la interfaz):
 sites            id, slug, nombre                    castellana | nogal | suba | campestre
 service_slots    site_id, día (mié|sáb|dom), franja (AM|PM|única), hora_llegada, hora_inicio, hora_fin
 groups           service_slot_id, nombre             "Grupo 1 · Sábado PM · Castellana"
-profiles         user_id, nombre, foto, email, rol_global (admin|cabeza|lider_sede|miembro)
+profiles         user_id, nombre, foto, is_admin, is_head          (el correo NO está aquí)
+profile_private  user_id, email  ← privado: solo la persona y quien la administra (coordinador, líder de su sede, cabeza, admin)
 site_leaders     user_id, site_id
 memberships      user_id UNIQUE, group_id, rol (coordinador|supervisor|voluntario)
 invitations      email UNIQUE, rol_global?, site_id?, group_id?, rol_grupo?, invitado_por, aceptada_en
@@ -136,13 +137,15 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 
 ## 8. Fases
 
-**Estado:** ✅ Fase 1 · ✅ Fase 2 · ⬜ Fase 3 · ⬜ Fase 4 · ⬜ Fase 5 · ⬜ Fase 6
+**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ⬜ Fase 4 · ⬜ Fase 5 · ⬜ Fase 6 · ⬜ Fase 7
+
 1. **Base:** proyecto Next.js, esquema y RLS, login con Google y hook de lista blanca, roles, tema claro/oscuro, carga inicial (sedes, locations, admin, cabeza), importación del prototipo actual (mapa y zonas 1 a 6 de Castellana, Auditorio principal).
-2. **Manual (núcleo):** visor de mapas y pines, fichas de posición con fotos y YouTube, editor de pines, carga y reemplazo de mapas, posiciones por día y franja, flujos. Con esto se lanza a unos 100 coordinadores y supervisores.
-3. **Anuncios.**
-4. **Grupos y servicio:** invitaciones por rol, rotación y cancelaciones, calendario, programación en PDF o imagen, planeación de posiciones.
-5. **Chat IA.**
-6. **Lanzamiento ampliado:** PWA instalable, ajustes, Supabase Pro, publicación a unas 2000 personas.
+2. **Manual (núcleo):** visor de mapas y pines, fichas de posición con fotos y YouTube, editor de pines, carga y reemplazo de mapas, posiciones por día y franja, flujos.
+3. **Personas y grupos:** agregar correos con rol (coordinador a su grupo, líder a su sede, cabeza y administrador a cualquiera), horarios y grupos, mover/cambiar rol/eliminar de la aplicación, líderes de sede, "Mi grupo". **Los correos son privados** (solo la persona y quien la administra).
+4. **Anuncios:** por sede, por sede y día, o por grupo, con enlaces. (Va después de Personas porque sus destinatarios son los grupos.)
+5. **Rotación y servicio:** rotación y cancelaciones, calendario, programación en PDF o imagen, planeación de posiciones.
+6. **Chat IA.**
+7. **Lanzamiento ampliado:** PWA instalable, ajustes, Supabase Pro, publicación a unas 2000 personas.
 
 ## 9. Lo que se necesita crear (cuenta del ministerio o del admin)
 1. Proyecto en Supabase. Se toman las variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY`.

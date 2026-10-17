@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { ManualClient } from "@/components/manual/ManualClient";
-import { getCurrentUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { loadLocation } from "@/lib/manual/load";
 import { createClient } from "@/lib/supabase/server";
 
@@ -12,8 +12,7 @@ export default async function LocationPage({ params }: PageProps<"/manual/[site]
   const { site: slug, location: locationId } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(locationId)) notFound();
 
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  const user = await requireUser();
 
   const supabase = await createClient();
   const { data: location } = await supabase
