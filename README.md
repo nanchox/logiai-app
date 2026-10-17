@@ -56,9 +56,8 @@ Quienes pueden editar: **administrador, cabeza de ministerio y líder de la sede
 Quien no es de la sede no ve nada de ella, y las reglas las aplica la base de datos, no solo la interfaz.
 
 ## Acceso y roles
-Nadie crea cuenta sin una fila en `invitations`. La migración 5 deja invitados al administrador y a la cabeza de ministerio;
-los demás se agregan desde la app (fase 4) o, mientras tanto, con SQL:
-```sql
-insert into invitations (email, group_id, group_role) values ('persona@correo.com', '<id del grupo>', 'voluntario');
-```
+Nadie crea cuenta sin una fila en `invitations`. La migración 5 deja invitados al administrador y a la cabeza de ministerio.
+Hasta que exista la pantalla de *Usuarios y grupos*, los horarios, grupos y personas se dan de alta con SQL:
+usa [`supabase/snippets/alta-de-personas.sql`](supabase/snippets/alta-de-personas.sql) (probado; se puede repetir sin duplicar).
+
 Los roles globales (`is_admin`, `is_head`) solo se cambian con SQL o `service_role`; ningún usuario puede dárselos desde la app.

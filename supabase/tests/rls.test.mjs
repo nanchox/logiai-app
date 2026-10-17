@@ -342,3 +342,48 @@ test('fase 2 · storage de fotos de posiciones y updated_at de mapas', async () 
   await as(U.liderCas, () => db.query(`update public.maps set image_version = image_version + 1 where zone_id is null and image_path like 'castellana/%'`));
   assert.ok((await one(`select updated_at from public.maps where zone_id is null and image_path like 'castellana/%'`)).updated_at > before);
 });
+
+// ───────────── Endurecimiento (cierre de fases 1 y 2) ─────────────
+// Estas dos pruebas también protegen las migraciones futuras: fallan si una función nueva queda abierta
+// a visitantes sin sesión o si una clave foránea queda sin índice.
+test('endurecimiento · ninguna función de public es ejecutable por anon o PUBLIC; solo las auxiliares por authenticated', async () => {
+  const fns = await rows(`
+    select p.proname, p.prorettype = 'trigger'::regtype as is_trigger, p.prosecdef,
+           has_function_privilege('anon', p.oid, 'execute') as anon_ok,
+           has_function_privilege('authenticated', p.oid, 'execute') as auth_ok,
+           coalesce(p.proacl::text, '') ~ '(^|,)=X' or p.proacl is null as public_ok,
+           (select count(*) from unnest(coalesce(p.proconfig, '{}')) c where c like 'search_path=%') as sp
+    from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prokind = 'f'`);
+  assert.ok(fns.length >= 20, `se esperaban ≥20 funciones, hay ${fns.length}`);
+  for (const f of fns) {
+    assert.equal(f.anon_ok, false, `${f.proname}: la ejecuta anon`);
+    assert.equal(f.public_ok, false, `${f.proname}: la ejecuta PUBLIC`);
+    if (f.proname === 'hook_before_user_created' || f.is_trigger) assert.equal(f.auth_ok, false, `${f.proname}: no debe ejecutarla authenticated`);
+    else assert.equal(f.auth_ok, true, `${f.proname}: authenticated la necesita para las políticas RLS`);
+    assert.ok(Number(f.sp) >= 1, `${f.proname}: sin search_path fijo`);
+  }
+});
+
+test('endurecimiento · las políticas siguen funcionando y los triggers siguen disparando sin permiso de ejecución', async () => {
+  // anon no puede llamar las funciones por la API
+  await db.exec(`set role anon`);
+  try { await denied(() => db.query(`select public.site_id_by_slug('castellana')`), /permission denied/); } finally { await db.exec(`reset role`); }
+  // un usuario con sesión sí (lo usan las políticas)
+  assert.ok(await as(U.vol1, async () => (await one(`select public.site_id_by_slug('castellana') as id`)).id));
+  await denied(() => as(U.vol1, () => db.query(`select public.handle_new_user()`)), /permission denied|trigger functions/);
+  // el trigger de alta funciona aunque quien inserta en auth.users no pueda ejecutar la función
+  await db.exec(`create role signup_probe nologin; grant usage on schema auth to signup_probe; grant insert, select on auth.users to signup_probe;
+    insert into public.invitations (email, is_admin) values ('probe@x.com', false);`);
+  await db.exec(`set role signup_probe`);
+  try { await db.query(`insert into auth.users (email) values ('probe@x.com')`); } finally { await db.exec(`reset role`); }
+  assert.equal(await count('profiles', `email = 'probe@x.com'`), 1);
+});
+
+test('endurecimiento · toda clave foránea tiene un índice que la cubra', async () => {
+  const bare = await rows(`
+    select c.conrelid::regclass::text || ' → ' || pg_get_constraintdef(c.oid) as fk
+    from pg_constraint c
+    where c.contype = 'f' and c.connamespace = 'public'::regnamespace
+      and not exists (select 1 from pg_index i where i.indrelid = c.conrelid and (i.indkey::int2[])[0:cardinality(c.conkey) - 1] = c.conkey)`);
+  assert.deepEqual(bare.map((r) => r.fk), []);
+});
