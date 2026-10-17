@@ -510,3 +510,158 @@ test('fase 3 · horarios y grupos: el líder administra los de su sede; no se bo
   await as(U.liderCas, () => db.query(`delete from public.service_slots where id = $1`, [slot.id]));
   assert.equal(await count('groups', `id = '${g.id}'`), 0);
 });
+
+// ───────────── Fase 4 · Anuncios ─────────────
+const ann = (uid, title, o = {}) =>
+  as(uid, () => db.query(
+    `insert into public.announcements (title, site_id, day, group_id, starts_at, ends_at, pinned)
+     values ($1, $2, $3, $4, coalesce($5::timestamptz, now()), $6, $7) returning id`,
+    [title, o.site ?? null, o.day ?? null, o.group ?? null, o.starts ?? null, o.ends ?? null, o.pinned ?? false]));
+const titlesSeenBy = (uid) => as(uid, async () => (await rows(`select title from public.announcements order by title`)).map((r) => r.title));
+const DAY_MS = 86400000;
+const iso = (offsetDays) => new Date(Date.now() + offsetDays * DAY_MS).toISOString();
+
+test('fase 4 · anuncios: quién ve cada alcance (iglesia, sede, sede+día, día, grupo) y la vigencia', async () => {
+  // Actores: líder de Nogal, y un voluntario de Castellana que sirve el domingo (otro horario de la misma sede).
+  await as(U.admin, () => db.query(`insert into public.invitations (email, leader_site_ids) values ('lider.nogal2@x.com', $1)`, [[U.sNogal]]));
+  await signup('liderNogal2', 'lider.nogal2@x.com');
+  U.sSuba = (await one(`select id from public.sites where slug = 'suba'`)).id;
+  const slotDom = (await one(`insert into public.service_slots (site_id, day, shift) values ($1, 'domingo', 'am') returning id`, [U.sCas])).id;
+  U.gDom = (await one(`insert into public.groups (service_slot_id, name) values ($1, 'Grupo Dom') returning id`, [slotDom])).id;
+  await as(U.liderCas, () => db.query(`insert into public.invitations (email, group_id, group_role) values ('vol.dom@x.com', $1, 'voluntario')`, [U.gDom]));
+  await signup('volDom', 'vol.dom@x.com');
+
+  // Un anuncio de cada alcance (los publica el administrador)
+  const A = U.admin;
+  await ann(A, 'all');
+  await ann(A, 'cas', { site: U.sCas });
+  await ann(A, 'cas-sab', { site: U.sCas, day: 'sabado' });
+  await ann(A, 'cas-dom', { site: U.sCas, day: 'domingo' });
+  await ann(A, 'suba', { site: U.sSuba });
+  await ann(A, 'day-sab', { day: 'sabado' });
+  await ann(A, 'g1', { group: U.gCas1 });
+  await ann(A, 'g2', { group: U.gCas2 });
+  await ann(A, 'cas-future', { site: U.sCas, starts: iso(1) });
+  await ann(A, 'cas-expired', { site: U.sCas, starts: iso(-3), ends: iso(-1) });
+  await ann(A, 'g1-future', { group: U.gCas1, starts: iso(2) });
+
+  // Quien sirve el sábado en Castellana (grupo 1): iglesia, sede, sede+sábado, sábado y su grupo. Nada de otros días, sedes ni grupos.
+  const sabado = ['all', 'cas', 'cas-sab', 'day-sab', 'g1'];
+  assert.deepEqual(await titlesSeenBy(U.vol1), sabado);
+  assert.deepEqual(await titlesSeenBy(U.sup1), sabado);
+  // Voluntario de Castellana que sirve el domingo
+  assert.deepEqual(await titlesSeenBy(U.volDom), ['all', 'cas', 'cas-dom']);
+  // Voluntario de Suba (domingo): iglesia y su sede; no el "sábado" de todas las sedes ni lo de Castellana
+  assert.deepEqual(await titlesSeenBy(U.volSuba), ['all', 'suba']);
+  // Coordinador: lo de su alcance + lo programado de SU grupo (lo administra), pero no lo programado de la sede
+  assert.deepEqual(await titlesSeenBy(U.coord1), [...sabado, 'g1-future'].sort());
+  // Líder de Castellana: toda su sede (también programados, vencidos y de sus grupos) + iglesia + los de "día" de todas las sedes; no Suba
+  assert.deepEqual(await titlesSeenBy(U.liderCas), ['all', 'cas', 'cas-dom', 'cas-expired', 'cas-future', 'cas-sab', 'day-sab', 'g1', 'g1-future', 'g2']);
+  // Líder de Nogal: iglesia y lo general por día; nada de Castellana ni Suba
+  assert.deepEqual(await titlesSeenBy(U.liderNogal2), ['all', 'day-sab']);
+  // Cabeza y admin: todo
+  assert.equal((await titlesSeenBy(U.cabeza)).length, 11);
+  assert.equal((await titlesSeenBy(U.admin)).length, 11);
+  // Una sesión sin cuenta (persona eliminada con la sesión aún vigente) no ve ni lo de toda la iglesia
+  assert.deepEqual(await titlesSeenBy('00000000-0000-4000-8000-0000000000aa'), []);
+  await db.exec(`set role anon`);
+  try { await denied(() => db.query(`select * from public.announcements`), /permission denied/); } finally { await db.exec(`reset role`); }
+});
+
+test('fase 4 · anuncios: quién puede publicar, editar y eliminar', async () => {
+  // Cabeza y admin: cualquier alcance (incluida toda la iglesia y "un día en todas las sedes")
+  await ann(U.cabeza, 'p-cabeza-iglesia');
+  await ann(U.cabeza, 'p-cabeza-dia', { day: 'domingo' });
+  // Líder de Castellana: su sede, sede+día y los grupos de su sede; no la iglesia, otras sedes, un día suelto ni grupos ajenos
+  await ann(U.liderCas, 'p-lider-sede', { site: U.sCas });
+  await ann(U.liderCas, 'p-lider-sede-dia', { site: U.sCas, day: 'sabado' });
+  await ann(U.liderCas, 'p-lider-grupo', { group: U.gCas2 });
+  await denied(() => ann(U.liderCas, 'x', {}), /row-level security/);
+  await denied(() => ann(U.liderCas, 'x', { site: U.sSuba }), /row-level security/);
+  await denied(() => ann(U.liderCas, 'x', { day: 'sabado' }), /row-level security/);
+  await denied(() => ann(U.liderCas, 'x', { group: U.gSuba1 }), /row-level security/);
+  await denied(() => ann(U.liderCas, 'x', { group: U.gSuba1, site: U.sCas }), /row-level security/);   // declara SU sede pero apunta a un grupo de otra
+  // Declarar otra sede no sirve de nada: la de un anuncio de grupo es la del grupo
+  const spoof = (await ann(U.liderCas, 'p-lider-grupo-sede-falsa', { group: U.gCas2, site: U.sSuba })).rows[0].id;
+  assert.equal((await one(`select site_id = $2 as ok from public.announcements where id = $1`, [spoof, U.sCas])).ok, true);
+  await denied(() => ann(U.liderNogal2, 'x', { site: U.sCas }), /row-level security/);
+  await ann(U.liderNogal2, 'p-nogal', { site: U.sNogal });
+  // Coordinador: solo su grupo
+  await ann(U.coord1, 'p-coord-grupo', { group: U.gCas1 });
+  await denied(() => ann(U.coord1, 'x', { group: U.gCas2 }), /row-level security/);
+  await denied(() => ann(U.coord1, 'x', { site: U.sCas }), /row-level security/);
+  await denied(() => ann(U.coord1, 'x', {}), /row-level security/);
+  // Supervisor, voluntarios: nada
+  for (const u of [U.sup1, U.vol1, U.volDom, U.volSuba]) await denied(() => ann(u, 'x', { group: U.gCas1 }), /row-level security/);
+
+  // Datos válidos: grupo + día no tiene sentido; la vigencia debe tener sentido; título y cuerpo con límite
+  await denied(() => as(U.admin, () => db.query(`insert into public.announcements (title, group_id, day) values ('x', $1, 'sabado')`, [U.gCas1])), /check/);
+  await denied(() => ann(U.admin, 'x', { starts: iso(2), ends: iso(1) }), /check/);
+  await denied(() => ann(U.admin, '   '), /check/);
+  await denied(() => as(U.admin, () => db.query(`insert into public.announcements (title, body) values ('x', repeat('a', 5001))`)), /check/);
+
+  // El autor sale de la sesión (no se puede suplantar) y queda con su nombre y rol de ese momento
+  const forged = (await as(U.liderCas, () => db.query(`insert into public.announcements (title, site_id, author_id, author_name) values ('p-falso', $1, $2, 'Otra Persona') returning id, author_id`, [U.sCas, U.admin]))).rows[0];
+  assert.equal(forged.author_id, U.liderCas);
+  const who = async (title) => (await one(`select author_name, author_role from public.announcements where title = $1`, [title]));
+  assert.deepEqual(await who('p-falso'), { author_name: 'liderCas', author_role: 'Líder de Castellana' });
+  assert.deepEqual(await who('p-coord-grupo'), { author_name: 'coord1', author_role: 'Coordinador' });
+  assert.deepEqual(await who('p-cabeza-iglesia'), { author_name: 'cabeza', author_role: 'Cabeza de ministerio' });
+  assert.equal((await who('all')).author_role, 'Administrador');
+
+  // Editar: el coordinador edita lo de su grupo (también lo que publicó otra persona); no lo de la sede; no lo mueve a otro grupo
+  const upd = (uid, id, set, args = []) => as(uid, async () => (await db.query(`update public.announcements set ${set} where id = $1`, [id, ...args])).affectedRows);
+  const adminG1 = (await one(`select id from public.announcements where title = 'g1'`)).id;
+  const casId = (await one(`select id from public.announcements where title = 'cas'`)).id;
+  assert.equal(await upd(U.coord1, adminG1, `title = 'g1 editado', pinned = true`), 1);
+  assert.equal(await upd(U.coord1, casId, `title = 'hack'`), 0);
+  await denied(() => upd(U.coord1, adminG1, `group_id = $2`, [U.gCas2]), /row-level security/);
+  await denied(() => upd(U.coord1, adminG1, `group_id = null`), /row-level security/);
+  assert.equal(await upd(U.vol1, adminG1, `title = 'hack'`), 0);
+  // El autor y la fecha de creación no cambian al editar; updated_at sí
+  const before = await one(`select author_id, author_name, created_at, updated_at from public.announcements where id = $1`, [adminG1]);
+  await new Promise((r) => setTimeout(r, 15));
+  assert.equal(await upd(U.coord1, adminG1, `author_id = $2, author_name = 'Otro', created_at = now() - interval '9 days', body = 'nuevo texto'`, [U.vol1]), 1);
+  const after = await one(`select author_id, author_name, created_at, updated_at from public.announcements where id = $1`, [adminG1]);
+  assert.equal(after.author_id, before.author_id); assert.equal(after.author_name, before.author_name);
+  assert.equal(+after.created_at, +before.created_at); assert.ok(after.updated_at > before.updated_at);
+
+  // Eliminar
+  const del = (uid, id) => as(uid, async () => (await db.query(`delete from public.announcements where id = $1`, [id])).affectedRows);
+  assert.equal(await del(U.vol1, adminG1), 0);
+  assert.equal(await del(U.coord1, casId), 0);
+  assert.equal(await del(U.coord1, adminG1), 1);
+  assert.equal(await del(U.liderCas, casId), 1);
+});
+
+test('fase 4 · anuncios: enlaces seguros que siguen la visibilidad del anuncio; el grupo se lleva sus anuncios', async () => {
+  const id = (await ann(U.coord1, 'con-enlaces', { group: U.gCas1 })).rows[0].id;
+  const link = (uid, label, url) => as(uid, () => db.query(`insert into public.announcement_links (announcement_id, label, url) values ($1, $2, $3)`, [id, label, url]));
+  await link(U.coord1, 'Programa del culto', 'https://docs.google.com/presentation/d/abc');
+  await link(U.liderCas, 'Mapa', 'https://maps.app.goo.gl/xyz');
+  await denied(() => link(U.coord1, 'x', 'javascript:alert(1)'), /check/);
+  await denied(() => link(U.coord1, 'x', 'http://sin-https.com'), /check/);
+  await denied(() => link(U.coord1, 'x', 'https://con espacio.com'), /check/);
+  await denied(() => link(U.coord1, '  ', 'https://ok.com'), /check/);
+  await denied(() => link(U.vol1, 'x', 'https://ok.com'), /row-level security/);
+  await link(U.coord2, 'Enlace del otro coordinador', 'https://ok.com');               // el otro coordinador del mismo grupo también puede
+  await denied(() => link(U.liderNogal2, 'x', 'https://ok.com'), /row-level security/);   // quien ni ve el anuncio, no le agrega enlaces
+
+  // Los enlaces se ven si se ve el anuncio (su grupo), y solo quien lo administra los quita
+  assert.equal(await as(U.vol1, () => count('announcement_links')), 3);
+  assert.equal(await as(U.volSuba, () => count('announcement_links')), 0);
+  assert.equal(await as(U.volDom, () => count('announcement_links')), 0);
+  assert.equal(await as(U.vol1, async () => (await db.query(`delete from public.announcement_links where announcement_id = $1`, [id])).affectedRows), 0);
+  assert.equal(await as(U.coord1, async () => (await db.query(`delete from public.announcement_links where label = 'Mapa'`)).affectedRows), 1);
+  // Si el anuncio se elimina, se van sus enlaces
+  await as(U.coord1, () => db.query(`delete from public.announcements where id = $1`, [id]));
+  assert.equal(await count('announcement_links'), 0);
+
+  // Si se elimina un grupo (vacío), se van sus anuncios
+  const slotDom = (await one(`select id from public.service_slots where site_id = $1 and day = 'domingo'`, [U.sCas])).id;
+  const tmp = (await as(U.liderCas, () => db.query(`insert into public.groups (service_slot_id, name) values ($1, 'Temporal') returning id`, [slotDom]))).rows[0].id;
+  await ann(U.liderCas, 'del-grupo-temporal', { group: tmp });
+  assert.equal(await count('announcements', `title = 'del-grupo-temporal'`), 1);
+  await as(U.liderCas, () => db.query(`delete from public.groups where id = $1`, [tmp]));
+  assert.equal(await count('announcements', `title = 'del-grupo-temporal'`), 0);
+});

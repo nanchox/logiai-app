@@ -1,8 +1,13 @@
 import Link from "next/link";
+import { AnnouncementCard } from "@/components/announcements/AnnouncementCard";
+import { loadAnnouncements } from "@/lib/announcements/load";
+import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 
 export default async function HomePage() {
   const user = await requireUser();
+
+  const recent = (await loadAnnouncements(await createClient(), 30)).filter((a) => a.status === "active").slice(0, 3);
 
   const scope = user.isAdmin || user.isHead
     ? "Todas las sedes"
@@ -31,6 +36,20 @@ export default async function HomePage() {
           No perteneces a un grupo de servicio{user.isAdmin || user.isHead || user.leaderSites.length ? " (tu rol acompaña a los grupos)." : ". Pide a tu coordinador que te agregue."}
         </section>
       )}
+
+      <section aria-label="Anuncios recientes" className="space-y-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-lg font-extrabold">Anuncios recientes</h2>
+          <Link href="/anuncios" className="text-sm font-semibold">Ver todos →</Link>
+        </div>
+        {recent.length === 0 ? (
+          <p className="rounded-2xl border border-line bg-surface p-5 text-muted">No hay anuncios por ahora.</p>
+        ) : (
+          <ul className="space-y-3">
+            {recent.map((a) => <li key={a.id}><AnnouncementCard a={a} compact /></li>)}
+          </ul>
+        )}
+      </section>
 
       {(user.membership || user.canManagePeople) && (
         <div className="grid gap-3 sm:grid-cols-2">

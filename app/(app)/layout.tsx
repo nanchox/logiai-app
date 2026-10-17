@@ -15,6 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <Link href="/" className="order-1 text-sm font-extrabold tracking-[0.2em] !text-on-header no-underline">LOGIAI</Link>
           <nav aria-label="Principal" className="order-3 -mx-1 flex w-full items-center gap-1 overflow-x-auto text-sm font-semibold sm:order-2 sm:mx-0 sm:w-auto sm:flex-1">
             <Link href="/" className={navLink}>Inicio</Link>
+            <Link href="/anuncios" className={navLink}>Anuncios</Link>
             <Link href="/manual" className={navLink}>Manual</Link>
             {user.membership && <Link href="/grupo" className={navLink}>Mi grupo</Link>}
             {user.canManagePeople && <Link href="/personas" className={navLink}>Personas</Link>}
