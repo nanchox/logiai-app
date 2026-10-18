@@ -97,15 +97,15 @@ El generador crea los `service_events` hasta una fecha límite. Al volver a gene
 | `maps` | `/{sede}/{location}/{mapa}-v{n}.png` |
 | `position-media` | `/{sede}/{posición}/…` (solo fotos; los videos son links de YouTube) |
 | `schedules` | `/{sede}/{grupo}/{período}.pdf` |
-| `announcements` | Adjuntos de los anuncios |
+| `announcements` | Adjuntos de las novedades |
 
 Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son privados y se accede con URLs firmadas, con las mismas reglas de visibilidad por sede y grupo.
 
 ## 6. Pantallas
-1. **Mi servicio:** próxima fecha, grupo, mis posiciones asignadas, anuncios que me aplican.
+1. **Mi servicio:** próxima fecha, grupo, mis posiciones asignadas, novedades que me aplican.
 2. **Manual:** sede → location → mapa → zona → pin. La ficha de cada posición muestra descripción, fotos, video, radio y ubicación en el mapa. Filtro por día y franja, que por defecto es el del usuario.
 3. **Flujos:** qué hacer cuando se llena el auditorio principal, paso a paso, por sede.
-4. **Anuncios:** por sede, por sede y día, o por grupo, con links.
+4. **Novedades:** por sede, por sede y día, o por grupo, con links.
 5. **Calendario y rotación:** fechas de servicio de mi grupo, cancelaciones y programación en PDF o imagen.
 6. **Planeación:** para coordinadores y supervisores.
 7. **Mi grupo:** miembros y roles.
@@ -128,7 +128,7 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 - Ruta de servidor `/api/chat`. La clave de OpenRouter vive solo en Vercel. El modelo se define con `OPENROUTER_MODEL`.
 - **No depende de herramientas (tool calling)**, porque los modelos gratuitos que rotan no lo soportan de forma confiable. En cada pregunta el servidor:
   1. Carga el contexto del usuario: sede, grupo, próxima fecha y posiciones asignadas.
-  2. Busca con texto completo en español (Postgres `tsvector`) en posiciones, zonas, flujos, anuncios y programaciones. La búsqueda corre **con la sesión del usuario**, así que RLS solo devuelve lo que esa persona puede ver.
+  2. Busca con texto completo en español (Postgres `tsvector`) en posiciones, zonas, flujos, novedades y programaciones. La búsqueda corre **con la sesión del usuario**, así que RLS solo devuelve lo que esa persona puede ver.
   3. Envía al modelo un system prompt fijo y los fragmentos encontrados. El modelo **responde solo con lo cargado** y cita la fuente con un link.
 - No se envían correos ni otros datos personales al modelo.
 - Hay un límite diario de mensajes por usuario, porque los modelos gratuitos tienen cupo.
@@ -142,7 +142,7 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 1. **Base:** proyecto Next.js, esquema y RLS, login con Google y hook de lista blanca, roles, tema claro/oscuro, carga inicial (sedes, locations, admin, cabeza), importación del prototipo actual (mapa y zonas 1 a 6 de Castellana, Auditorio principal).
 2. **Manual (núcleo):** visor de mapas y pines, fichas de posición con fotos y YouTube, editor de pines, carga y reemplazo de mapas, posiciones por día y franja, flujos.
 3. **Personas y grupos:** agregar correos con rol (coordinador a su grupo, líder a su sede, cabeza y administrador a cualquiera), horarios y grupos, mover/cambiar rol/eliminar de la aplicación, líderes de sede, "Mi grupo". **Los correos son privados** (solo la persona y quien la administra).
-4. **Anuncios:** noticias, cambios y avisos para toda la iglesia, una sede, una sede y un día, un día en todas las sedes, o un grupo; con enlaces, fijado, programación y vencimiento. Publican cabeza/admin (todo), líder (su sede) y coordinador (su grupo).
+4. **Novedades:** noticias, cambios y avisos para toda la iglesia, una sede, una sede y un día, un día en todas las sedes, o un grupo; con enlaces, fijado, programación y vencimiento. Publican cabeza/admin (todo), líder (su sede) y coordinador (su grupo).
 5. **Rotación y servicio:** rotación y cancelaciones, calendario, programación en PDF o imagen, planeación de posiciones.
 6. **Chat IA.**
 7. **Lanzamiento ampliado:** PWA instalable, ajustes, Supabase Pro, publicación a unas 2000 personas.

@@ -26,17 +26,17 @@ export function AnnouncementsClient({ items, viewer, sites, groups }: Props) {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
         <div role="group" aria-label="Filtrar por tipo" className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1">
-          <button type="button" className={chip(filter === "all")} aria-pressed={filter === "all"} onClick={() => setFilter("all")}>Todos ({items.length})</button>
+          <button type="button" className={chip(filter === "all")} aria-pressed={filter === "all"} onClick={() => setFilter("all")}>Todas ({items.length})</button>
           {CATEGORIES.map((c) => (
             <button key={c} type="button" className={chip(filter === c)} aria-pressed={filter === c} onClick={() => setFilter(c)}>{CATEGORY_PLURAL[c]} ({count(c)})</button>
           ))}
         </div>
-        {canCreate && <button type="button" className={btnPrimary} onClick={() => setEditing("new")}>＋ Nuevo anuncio</button>}
+        {canCreate && <button type="button" className={btnPrimary} onClick={() => setEditing("new")}>＋ Nueva novedad</button>}
       </div>
 
       {shown.length === 0 ? (
         <p className="rounded-2xl border border-line bg-surface p-5 text-muted">
-          {items.length === 0 ? "No hay anuncios por ahora." : "No hay anuncios de este tipo."}
+          {items.length === 0 ? "No hay novedades por ahora." : "No hay novedades de este tipo."}
         </p>
       ) : (
         <ul className="space-y-4">

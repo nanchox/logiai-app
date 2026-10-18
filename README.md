@@ -1,7 +1,7 @@
 # LogiAI
 
-Manual de logística y servicio de **El Lugar de Su Presencia**: mapas, posiciones, indicaciones, anuncios y chat con IA.
-El plan completo está en [`PLAN.md`](PLAN.md). Estado actual: **Fases 1 a 4** completas (base, login, permisos, manual con mapas y posiciones, fotos, videos, flujos, personas y grupos, y anuncios). Siguen rotación y calendario, y el chat de IA.
+Manual de logística y servicio de **El Lugar de Su Presencia**: mapas, posiciones, indicaciones, novedades y chat con IA.
+El plan completo está en [`PLAN.md`](PLAN.md). Estado actual: **Fases 1 a 4** completas (base, login, permisos, manual con mapas y posiciones, fotos, videos, flujos, personas y grupos, y novedades). Siguen rotación y calendario, y el chat de IA.
 
 - **App:** Next.js 16 (App Router) en Vercel · **Datos, login y archivos:** Supabase
 - `legacy/` — prototipo original (HTML estático) y las imágenes de mapas de Castellana
@@ -71,8 +71,8 @@ Nadie crea cuenta sin una invitación (un correo agregado). Se administra en **P
 - **Grupos y horarios:** un horario es un día y una franja de una sede (con horas de llegada, inicio y fin); un grupo pertenece a uno. No se puede eliminar un grupo con integrantes: se mueven primero.
 - Los roles globales (administrador y cabeza) se dan invitando desde **Personas → Líderes y administración** (solo el administrador).
 
-## Anuncios
-Noticias, cambios y avisos en **Anuncios** (menú superior); los más recientes también salen en el inicio.
+## Novedades
+Noticias, cambios y avisos en **Novedades** (menú superior); los más recientes también salen en el inicio.
 
 | Alcance | Lo ve |
 |---|---|
@@ -85,9 +85,9 @@ Noticias, cambios y avisos en **Anuncios** (menú superior); los más recientes 
 Cabeza de ministerio y administrador ven todo.
 
 - **Quién publica, edita y elimina:** cabeza y administrador, en cualquier alcance; el **líder de sede**, en su sede (sede, sede y día, o un grupo de su sede); el **coordinador**, solo en su grupo. Supervisores y voluntarios solo leen. Lo hace cumplir la base de datos, no solo la pantalla.
-- **Tipo** (anuncio, cambio o noticia), **fijar arriba**, hasta 5 **enlaces** (solo `https`) y los enlaces escritos dentro del texto también se pueden abrir.
+- **Tipo** (anuncio, cambio o noticia; todos aparecen en Novedades), **fijar arriba**, hasta 5 **enlaces** (solo `https`) y los enlaces escritos dentro del texto también se pueden abrir.
 - **Vigencia:** se puede programar la publicación y dar una fecha de fin. Quien lo administra ve también los programados y los vencidos, marcados como tales; los demás, solo los vigentes. Las fechas se escriben y se muestran en hora de Colombia.
-- Cada anuncio muestra quién lo publicó, con su nombre y rol (nunca su correo).
+- Cada novedad muestra quién la publicó, con su nombre y rol (nunca su correo).
 
 ## Actualizar una instalación existente
 Cada fase nueva trae migraciones. El orden seguro es:

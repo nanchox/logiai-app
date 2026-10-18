@@ -12,7 +12,7 @@ export function CategoryBadge({ category }: { category: Category }) {
   return <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${CATEGORY_STYLE[category]}`}>{CATEGORY_LABEL[category]}</span>;
 }
 
-/** Tarjeta de un anuncio. `actions` se muestra solo a quien puede editarlo. */
+/** Tarjeta de una novedad. `actions` se muestra solo a quien puede editarlo. */
 export function AnnouncementCard({ a, actions, compact }: { a: AnnouncementItem; actions?: React.ReactNode; compact?: boolean }) {
   const by = [a.authorName, a.authorRole].filter(Boolean).join(" · ");
   return (

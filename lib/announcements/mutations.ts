@@ -39,7 +39,7 @@ function validate(i: AnnouncementInput) {
   if (s.kind === "group" && !s.groupId) throw new Error("Elige el grupo.");
 }
 
-/** Crea o actualiza un anuncio con sus enlaces. Devuelve su id. */
+/** Crea o actualiza una novedad con sus enlaces. Devuelve su id. */
 export async function saveAnnouncement(sb: SupabaseClient, input: AnnouncementInput, id?: string): Promise<string> {
   validate(input);
   const { scope: s } = input;
@@ -60,7 +60,7 @@ export async function saveAnnouncement(sb: SupabaseClient, input: AnnouncementIn
   let announcementId = id;
   if (id) {
     const upd = must(await sb.from("announcements").update(row).eq("id", id).select("id")) as unknown[];
-    if (!upd.length) throw new Error("No tienes permiso para editar este anuncio.");
+    if (!upd.length) throw new Error("No tienes permiso para editar esta novedad.");
     must(await sb.from("announcement_links").delete().eq("announcement_id", id));
   } else {
     announcementId = (must(await sb.from("announcements").insert(row).select("id").single()) as { id: string }).id;

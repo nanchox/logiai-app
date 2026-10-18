@@ -10,7 +10,7 @@ type Row = {
   announcement_links: { id: string; label: string; url: string; sort: number }[];
 };
 
-/** Anuncios que el usuario puede ver (la base de datos filtra por alcance y vigencia), fijados primero y luego los más recientes. */
+/** Novedades que el usuario puede ver (la base de datos filtra por alcance y vigencia), fijados primero y luego los más recientes. */
 export async function loadAnnouncements(supabase: SupabaseClient, limit = 100): Promise<AnnouncementItem[]> {
   const { data } = await supabase
     .from("announcements")

@@ -46,7 +46,7 @@ export function scopeLabel(a: Pick<AnnouncementItem, "siteId" | "siteName" | "da
   }
 }
 
-/** ¿Puede el usuario editar o eliminar este anuncio? (refleja las políticas de la base de datos, que son las que mandan) */
+/** ¿Puede el usuario editar o eliminar esta novedad? (refleja las políticas de la base de datos, que son las que mandan) */
 export function canManageAnnouncement(v: Viewer | null, a: Pick<AnnouncementItem, "siteId" | "groupId">): boolean {
   if (!v) return false;
   if (v.kind === "admin" || v.kind === "head") return true;

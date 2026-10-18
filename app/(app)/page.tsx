@@ -37,13 +37,13 @@ export default async function HomePage() {
         </section>
       )}
 
-      <section aria-label="Anuncios recientes" className="space-y-3">
+      <section aria-label="Novedades recientes" className="space-y-3">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-lg font-extrabold">Anuncios recientes</h2>
-          <Link href="/anuncios" className="text-sm font-semibold">Ver todos →</Link>
+          <h2 className="text-lg font-extrabold">Novedades recientes</h2>
+          <Link href="/novedades" className="text-sm font-semibold">Ver todas →</Link>
         </div>
         {recent.length === 0 ? (
-          <p className="rounded-2xl border border-line bg-surface p-5 text-muted">No hay anuncios por ahora.</p>
+          <p className="rounded-2xl border border-line bg-surface p-5 text-muted">No hay novedades por ahora.</p>
         ) : (
           <ul className="space-y-3">
             {recent.map((a) => <li key={a.id}><AnnouncementCard a={a} compact /></li>)}
