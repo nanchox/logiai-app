@@ -116,13 +116,13 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 ### Paleta
 | Color | Uso |
 |---|---|
-| `#800080` púrpura | Color principal: barra, botones |
-| `#FFD700` dorado | Acentos, ítem activo (en modo claro solo como relleno con texto oscuro) |
-| `#800020` vinotinto | Superficies y encabezados en modo oscuro |
-| `#FF0000` rojo | Pin de supervisor, alertas |
-| `#00BFFF` celeste | Pin de voluntario, links (en modo claro, como relleno) |
-| `#CD7F32` bronce | Insignias de coordinador y líder |
+| `#0B0713` negro | Barra superior en modo claro, texto, fondo del modo oscuro |
 | `#FFFFFF` blanco | Fondo del modo claro, texto del modo oscuro |
+| `#FFD700` dorado | Acentos, ítem activo, insignias de rol, links en modo oscuro (en modo claro solo como relleno con texto oscuro) |
+| `#6D28D9` / `#8B3DFF` morado brillante | Color principal: botones y links (más claro en modo oscuro) |
+| `#2B0A55` / `#4C1D95` morado oscuro | Barra superior en modo oscuro y botones de cierre |
+| `#C084FC` lila | Pin de voluntario |
+| `#E11D48` rojo | Pin de supervisor y alertas |
 
 ## 7. Chat IA (OpenRouter, modelo gratuito)
 - Ruta de servidor `/api/chat`. La clave de OpenRouter vive solo en Vercel. El modelo se define con `OPENROUTER_MODEL`.

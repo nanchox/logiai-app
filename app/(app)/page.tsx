@@ -26,7 +26,7 @@ export default async function HomePage() {
       <div>
         <h1 className="text-2xl font-extrabold">Hola, {user.name.split(" ")[0]}</h1>
         <p className="mt-1 text-muted">
-          <span className="mr-2 inline-block rounded-full bg-bronze px-2.5 py-0.5 text-xs font-bold text-on-bronze">{user.roleLabel}</span>
+          <span className="mr-2 inline-block rounded-full bg-badge px-2.5 py-0.5 text-xs font-bold text-on-badge">{user.roleLabel}</span>
           {scope}
         </p>
       </div>

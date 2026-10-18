@@ -29,7 +29,7 @@ export function StatusBadges({ e }: { e: Pick<ServiceEvent, "status" | "kind" | 
   return (
     <>
       {e.status === "cancelado" && <span className="rounded-full bg-danger px-2 py-0.5 text-xs font-bold text-white">Cancelado{e.cancelReason ? ` · ${e.cancelReason}` : ""}</span>}
-      {e.kind === "especial" && <span className="rounded-full bg-bronze px-2 py-0.5 text-xs font-bold text-on-bronze">Especial</span>}
+      {e.kind === "especial" && <span className="rounded-full bg-badge px-2 py-0.5 text-xs font-bold text-on-badge">Especial</span>}
       {e.kind === "rotacion" && e.manual && <span className="rounded-full border border-line px-2 py-0.5 text-xs font-bold">Ajustado a mano</span>}
     </>
   );

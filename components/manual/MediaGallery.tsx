@@ -88,7 +88,7 @@ export function MediaGallery({ media }: { media: ViewerMedia[] }) {
             {/* eslint-disable-next-line @next/next/no-img-element -- URL firmada de Supabase Storage */}
             <img src={zoom.url!} alt={zoom.caption ?? "Foto de la posición"} className="mx-auto max-h-[80vh] w-auto rounded-lg" />
             {zoom.caption && <p className="mt-2 text-center text-sm">{zoom.caption}</p>}
-            <button type="button" onClick={() => setZoom(null)} className="mt-3 w-full rounded-lg bg-wine p-3 font-bold text-white">CERRAR</button>
+            <button type="button" onClick={() => setZoom(null)} className="mt-3 w-full rounded-lg bg-deep p-3 font-bold text-white">CERRAR</button>
           </div>
         )}
       </ModalDialog>

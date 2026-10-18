@@ -51,12 +51,12 @@ export function PeopleClient({ viewer, groups, selectedId, members, invites }: P
           <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
             {shown.map((m) => (
               <li key={m.userId} className="flex flex-wrap items-center gap-3 p-3">
-                <span aria-hidden className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-black ${m.role === "coordinador" ? "bg-bronze text-on-bronze" : "bg-bg"}`}>{initials(m.name)}</span>
+                <span aria-hidden className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-black ${m.role === "coordinador" ? "bg-badge text-on-badge" : "bg-bg"}`}>{initials(m.name)}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-semibold">{m.name}{m.userId === viewer.userId && <span className="ml-2 text-xs text-muted">(tú)</span>}</span>
                   <span className="block truncate text-sm text-muted">{m.email ?? "Correo privado"}</span>
                 </span>
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${m.role === "coordinador" ? "bg-bronze text-on-bronze" : "border border-line"}`}>{ROLE_LABEL[m.role]}</span>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${m.role === "coordinador" ? "bg-badge text-on-badge" : "border border-line"}`}>{ROLE_LABEL[m.role]}</span>
                 {group && canManageMember(viewer, m, group) && (
                   <button type="button" className={btn} onClick={() => setEditing(m)} aria-label={`Administrar a ${m.name}`}>Administrar</button>
                 )}
