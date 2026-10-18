@@ -811,11 +811,11 @@ test('fase 5 · planeación: borrador solo para planificadores, publicado para e
   // Planifican coordinadores, supervisores y el líder; el voluntario no
   await plan(U.coord1, U.evG1, 'borrador');
   await assign(U.sup1, U.evG1, U.posVol, U.vol1);
-  await assign(U.coord2, U.evG1, U.posVol, U.coord1);              // varias personas en la misma posición
+  await assign(U.coord2, U.evG1, U.posVol, U.sup1);               // varias personas en la misma posición
   await assign(U.liderCas, U.evG1, U.posVol2, U.vol1);             // una persona en varias posiciones
-  await denied(() => assign(U.vol1, U.evG1, U.posVol, U.coord1), /row-level security/);
+  await denied(() => assign(U.vol1, U.evG1, U.posVol2, U.sup1), /row-level security/);
   await denied(() => plan(U.vol1, U.evG1, 'publicado'), /row-level security/);
-  await denied(() => assign(U.coord1, U.evG2, U.posVol, U.coord1), /row-level security|no pertenece/);      // coordinador del otro grupo no planifica este
+  await denied(() => assign(U.coord1, U.evG2, U.posVol2, U.sup1), /row-level security|no pertenece/);      // coordinador del otro grupo no planifica este
   await denied(() => assign(U.liderNogal2, U.evG1, U.posVol, U.vol1), /row-level security/);
   await denied(() => assign(U.sup1, U.evG1, U.posVol, U.vol1), /duplicate|unique/i);
   await as(U.sup1, () => db.query(`insert into public.service_position_notes (event_id, position_id, note) values ($1, $2, 'Llegar 30 min antes')`, [U.evG1, U.posVol]));
@@ -855,10 +855,11 @@ test('fase 5 · planeación: reglas de asignación (grupo, sede, día/franja, su
   // Posición de otra sede
   const posSuba = (await one(`insert into public.positions (location_id, code, name, kind) select l.id, 'N-1', 'Nogal 1', 'voluntario' from public.locations l where l.site_id = $1 limit 1 returning id`, [U.sNogal])).id;
   await denied(() => assign(U.coord1, U.evG1, posSuba, U.vol1), /no es de la sede/);
-  // Posición de supervisor: no para voluntarios; sí para supervisores y coordinadores
+  // Posición de supervisor: no para voluntarios; sí para supervisores; los coordinadores no ocupan ninguna
   await denied(() => assign(U.coord1, U.evG1, U.posSup, U.vol1), /solo se asignan a supervisores/);
   await assign(U.coord1, U.evG1, U.posSup, U.sup1);
-  await assign(U.coord1, U.evG1, U.posSup, U.coord2);
+  await denied(() => assign(U.coord1, U.evG1, U.posSup, U.coord2), /Los coordinadores no ocupan posiciones/);
+  await denied(() => assign(U.coord1, U.evG1, U.posVol2, U.coord2), /Los coordinadores no ocupan posiciones/);
   // Un supervisor puede tomar posición de voluntario
   await assign(U.coord1, U.evG1, U.posVol2, U.sup1);
   // Posición que no aplica a ese día / franja / oculta
@@ -912,10 +913,15 @@ test('fase 5 · planeación: cambiar de grupo el servicio borra la planeación; 
   await db.query(`update public.memberships set group_id = $2 where user_id = $1`, [U.vol1, U.gCas1]);
   // Un supervisor que baja a voluntario pierde sus posiciones de supervisor futuras, no las de voluntario
   const supPos = async () => (await rows(`select p.kind from public.service_assignments a join public.positions p on p.id = a.position_id where a.user_id = $1 and a.event_id = $2`, [U.sup1, U.evG1])).map((x) => x.kind).sort();
-  assert.deepEqual(await supPos(), ['supervisor', 'voluntario']);
+  assert.ok((await supPos()).includes('supervisor'));
   await db.query(`update public.memberships set role = 'voluntario' where user_id = $1`, [U.sup1]);
-  assert.deepEqual(await supPos(), ['voluntario']);
+  assert.ok(!(await supPos()).includes('supervisor') && (await supPos()).includes('voluntario'));
   await db.query(`update public.memberships set role = 'supervisor' where user_id = $1`, [U.sup1]);
+  // Quien pasa a coordinador deja sus posiciones futuras
+  await db.query(`update public.memberships set role = 'supervisor' where user_id = $1`, [U.coord2]);
+  await db.query(`insert into public.service_assignments (event_id, position_id, user_id) values ($1, $2, $3)`, [U.evG1, U.posVol, U.coord2]);
+  await db.query(`update public.memberships set role = 'coordinador' where user_id = $1`, [U.coord2]);
+  assert.equal(await count('service_assignments', `user_id = '${U.coord2}'`), 0);
   // Historial: cada quien ve el suyo, también el pasado de un grupo del que ya salió
   await db.query(`update public.memberships set group_id = $2 where user_id = $1`, [U.vol1, U.gCas2]);
   const hist = await as(U.vol1, () => count('service_assignments', `user_id = '${U.vol1}'`));

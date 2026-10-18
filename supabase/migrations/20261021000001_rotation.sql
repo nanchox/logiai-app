@@ -236,7 +236,7 @@ create trigger service_events_group_changed after update of group_id on public.s
 create trigger service_events_touch before update on public.service_events for each row execute function public.touch_updated_at();
 
 -- Una asignación solo es válida si la persona es del grupo que sirve, la posición es de esa sede y aplica a ese
--- día y franja, y las posiciones de supervisor solo van a supervisores (o coordinadores).
+-- día y franja, los coordinadores no ocupan posiciones y las de supervisor solo van a supervisores.
 create function public.service_assignments_guard() returns trigger
 language plpgsql security definer set search_path = '' as $$
 declare ev record; pos record; v_role public.group_role;
@@ -264,8 +264,11 @@ begin
   if cardinality(pos.shifts) > 0 and not ev.shift = any (pos.shifts) then
     raise exception 'La posición no aplica a esa franja' using errcode = 'check_violation';
   end if;
+  if v_role = 'coordinador' then
+    raise exception 'Los coordinadores no ocupan posiciones: coordinan el grupo' using errcode = 'check_violation';
+  end if;
   if pos.kind = 'supervisor' and v_role = 'voluntario' then
-    raise exception 'Las posiciones de supervisor solo se asignan a supervisores o coordinadores' using errcode = 'check_violation';
+    raise exception 'Las posiciones de supervisor solo se asignan a supervisores' using errcode = 'check_violation';
   end if;
   return new;
 end $$;
@@ -283,12 +286,15 @@ end $$;
 create trigger service_notes_guard before insert or update on public.service_position_notes
   for each row execute function public.service_notes_guard();
 
--- Quien sale del grupo (o deja de ser supervisor) pierde sus asignaciones de servicios que aún no han pasado;
+-- Quien sale del grupo, se vuelve coordinador (no ocupa posiciones) o deja de ser supervisor pierde sus asignaciones de servicios que aún no han pasado;
 -- las pasadas se conservan como historial.
 create function public.memberships_clean_assignments() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
   if tg_op = 'DELETE' or new.group_id is distinct from old.group_id then
+    delete from public.service_assignments a using public.service_events e
+     where a.event_id = e.id and a.user_id = old.user_id and e.group_id = old.group_id and e.service_date >= public.today_co();
+  elsif new.role = 'coordinador' and old.role <> 'coordinador' then
     delete from public.service_assignments a using public.service_events e
      where a.event_id = e.id and a.user_id = old.user_id and e.group_id = old.group_id and e.service_date >= public.today_co();
   elsif new.role = 'voluntario' and old.role <> 'voluntario' then
