@@ -665,3 +665,313 @@ test('fase 4 · anuncios: enlaces seguros que siguen la visibilidad del anuncio;
   await as(U.liderCas, () => db.query(`delete from public.groups where id = $1`, [tmp]));
   assert.equal(await count('announcements', `title = 'del-grupo-temporal'`), 0);
 });
+
+// ───────────── Fase 5 · Rotación y servicio ─────────────
+const gen = (uid, slot, from, until, first = null) =>
+  as(uid, async () => (await one(`select public.generate_service_events($1, $2, $3, $4) r`, [slot, from, until, first])).r);
+const dayGroups = async (slot, order = 'service_date') =>
+  (await rows(`select e.service_date::text d, g.name g, e.status from public.service_events e left join public.groups g on g.id = e.group_id where e.slot_id = $1 order by ${order}`, [slot]));
+const names = (rs) => rs.map((r) => r.g);
+
+test('fase 5 · rotación: secuencia semanal en orden, idempotente, y continúa al ampliar el rango', async () => {
+  U.sCamp = (await one(`select id from public.sites where slug = 'campestre'`)).id;
+  U.slotCamp = (await one(`insert into public.service_slots (site_id, day, shift) values ($1, 'domingo', 'unica') returning id`, [U.sCamp])).id;
+  for (const n of ['R1', 'R2', 'R3', 'R4']) await db.query(`insert into public.groups (service_slot_id, name) values ($1, $2)`, [U.slotCamp, n]);
+  assert.deepEqual((await rows(`select rotation_order o from public.groups where service_slot_id = $1 order by 1`, [U.slotCamp])).map((r) => r.o), [1, 2, 3, 4]);
+  await as(U.admin, () => db.query(`insert into public.invitations (email, leader_site_ids) values ('lider.camp@x.com', $1)`, [[U.sCamp]]));
+  await signup('liderCamp', 'lider.camp@x.com');
+  const gid = async (n) => (await one(`select id from public.groups where service_slot_id = $1 and name = $2`, [U.slotCamp, n])).id;
+  for (const n of ['R1', 'R2', 'R3', 'R4']) U['g' + n] = await gid(n);
+
+  // Quien no administra la sede no genera
+  await denied(() => gen(U.liderNogal, U.slotCamp, '2030-01-01', '2030-02-24'), /No tienes permiso/);
+  await denied(() => gen(U.coord1, U.slotCamp, '2030-01-01', '2030-02-24'), /No tienes permiso/);
+  await denied(() => gen(U.liderCamp, U.slotCamp, '2030-02-24', '2030-01-01'), /posterior/);
+  await denied(() => gen(U.liderCamp, U.slotCamp, '2030-01-01', '2031-12-31'), /400 días/);
+
+  const r = await gen(U.liderCamp, U.slotCamp, '2030-01-01', '2030-02-24');
+  assert.deepEqual(r, { created: 8, updated: 0, protected: 0, kept: 0 });
+  let ev = await dayGroups(U.slotCamp);
+  assert.equal(ev[0].d, '2030-01-06');                                  // el primer domingo
+  assert.deepEqual(names(ev), ['R1', 'R2', 'R3', 'R4', 'R1', 'R2', 'R3', 'R4']);
+  // Idempotente
+  assert.deepEqual(await gen(U.liderCamp, U.slotCamp, '2030-01-01', '2030-02-24'), { created: 0, updated: 0, protected: 0, kept: 0 });
+  // Ampliar continúa la secuencia (no reinicia)
+  assert.deepEqual(await gen(U.cabeza, U.slotCamp, '2030-02-25', '2030-03-17'), { created: 3, updated: 0, protected: 0, kept: 0 });
+  assert.deepEqual(names(await dayGroups(U.slotCamp)).slice(8), ['R1', 'R2', 'R3']);
+  // El día de la semana del horario manda: el miércoles de Nogal cae en miércoles
+  const slotNog = (await one(`select id from public.service_slots where site_id = $1 and day = 'miercoles'`, [U.sNogal])).id;
+  await gen(U.liderNogal2, slotNog, '2030-01-01', '2030-01-10');
+  assert.deepEqual((await rows(`select service_date::text d from public.service_events where slot_id = $1 order by 1`, [slotNog])).map((r) => r.d), ['2030-01-02', '2030-01-09']);
+  // Sedes independientes: la de Campestre no cambió
+  assert.equal(await count('service_events', `slot_id = '${U.slotCamp}'`), 11);
+});
+
+test('fase 5 · cancelaciones: la fecha cancelada consume el turno; alcances y permisos', async () => {
+  const cancel = (uid, d, o = {}) => as(uid, () => db.query(`insert into public.service_cancellations (service_date, site_id, slot_id, reason) values ($1, $2, $3, $4) returning id`, [d, o.site ?? null, o.slot ?? null, o.reason ?? null]));
+  // Cancelar la 3.ª fecha (2030-01-20, le tocaba R3): ese turno se pierde y el 27 sigue sirviendo R4
+  const c = (await cancel(U.liderCamp, '2030-01-20', { site: U.sCamp, reason: 'Retiro' })).rows[0].id;
+  let ev = await dayGroups(U.slotCamp);
+  assert.deepEqual(ev.slice(0, 5).map((e) => `${e.d}:${e.g}:${e.status}`), [
+    '2030-01-06:R1:programado', '2030-01-13:R2:programado', '2030-01-20:R3:cancelado', '2030-01-27:R4:programado', '2030-02-03:R1:programado']);
+  assert.equal((await one(`select cancel_reason r from public.service_events where slot_id = $1 and service_date = '2030-01-20'`, [U.slotCamp])).r, 'Retiro');
+  // Regenerar no mueve a nadie: la cancelada mantiene su turno
+  assert.deepEqual(await gen(U.liderCamp, U.slotCamp, '2030-01-01', '2030-03-17'), { created: 0, updated: 0, protected: 0, kept: 0 });
+  // Ver cancelaciones: líder de la sede sí, el de otra sede no; el coordinador solo mira (no ve la tabla de gestión)
+  assert.equal(await as(U.liderCamp, () => count('service_cancellations')), 1);
+  assert.equal(await as(U.liderNogal, () => count('service_cancellations')), 0);
+  // Quitar la cancelación restablece el servicio
+  await as(U.liderCamp, () => db.query(`delete from public.service_cancellations where id = $1`, [c]));
+  assert.equal((await one(`select status s from public.service_events where slot_id = $1 and service_date = '2030-01-20'`, [U.slotCamp])).s, 'programado');
+  assert.equal((await one(`select cancel_reason r from public.service_events where slot_id = $1 and service_date = '2030-01-20'`, [U.slotCamp])).r, null);
+
+  // Permisos: el líder de otra sede no cancela aquí; "todas las sedes" solo cabeza y admin
+  await denied(() => cancel(U.liderNogal, '2030-01-20', { site: U.sCamp }), /row-level security/);
+  await denied(() => cancel(U.liderCamp, '2030-01-20', {}), /row-level security/);
+  await denied(() => cancel(U.coord1, '2030-01-20', { site: U.sCas }), /row-level security/);
+  await denied(() => cancel(U.vol1, '2030-01-20', { site: U.sCas }), /row-level security/);
+  // Un horario concreto de la sede y todas las sedes
+  await cancel(U.liderCamp, '2030-01-13', { slot: U.slotCamp, reason: 'Solo este horario' });
+  const all = (await cancel(U.cabeza, '2030-02-03', { reason: 'Festivo' })).rows[0].id;
+  const st = async (slot, d) => (await one(`select status s, cancel_reason r from public.service_events where slot_id = $1 and service_date = $2`, [slot, d]));
+  assert.deepEqual(await st(U.slotCamp, '2030-01-13'), { s: 'cancelado', r: 'Solo este horario' });
+  assert.deepEqual(await st(U.slotCamp, '2030-02-03'), { s: 'cancelado', r: 'Festivo' });
+  // Todas las sedes: también alcanza otra sede el mismo día (domingo 2030-02-03 en Castellana si existiera); aquí verificamos Nogal el miércoles
+  await cancel(U.admin, '2030-01-09', { reason: 'Festivo miércoles' });
+  const slotNog = (await one(`select id from public.service_slots where site_id = $1 and day = 'miercoles'`, [U.sNogal])).id;
+  assert.equal((await st(slotNog, '2030-01-09')).s, 'cancelado');
+  assert.equal((await st(slotNog, '2030-01-02')).s, 'programado');
+  // El líder no ve ni borra las de todas las sedes; cabeza sí
+  assert.equal(await as(U.liderCamp, async () => (await db.query(`delete from public.service_cancellations where service_date = '2030-02-03' and site_id is null`)).affectedRows), 0);
+  assert.equal(await as(U.cabeza, async () => (await db.query(`delete from public.service_cancellations where id = $1`, [all])).affectedRows), 1);
+  assert.equal((await st(U.slotCamp, '2030-02-03')).s, 'programado');
+  // Una fecha cancelada antes de generar nace cancelada
+  await cancel(U.liderCamp, '2030-04-07', { slot: U.slotCamp, reason: 'Previa' });
+  await gen(U.liderCamp, U.slotCamp, '2030-03-18', '2030-04-07');
+  assert.deepEqual(await st(U.slotCamp, '2030-04-07'), { s: 'cancelado', r: 'Previa' });
+  // Una cancelación duplicada no se permite
+  await denied(() => cancel(U.liderCamp, '2030-04-07', { slot: U.slotCamp }), /unique|duplicate/i);
+  await db.exec(`delete from public.service_cancellations`);
+});
+
+test('fase 5 · rotación: agregar un grupo y regenerar hacia adelante; lo ajustado a mano y lo especial no se tocan', async () => {
+  // Ajuste a mano del 13 de enero (R2 → R4) y servicio especial un viernes
+  const ev13 = (await one(`select id from public.service_events where slot_id = $1 and service_date = '2030-01-13'`, [U.slotCamp])).id;
+  await denied(() => as(U.coord1, () => db.query(`select public.set_event_group($1, $2)`, [ev13, U.gR4])), /No tienes permiso/);
+  await denied(() => as(U.liderCamp, () => db.query(`select public.set_event_group($1, $2)`, [ev13, U.gCas1])), /mismo horario/);
+  await as(U.liderCamp, () => db.query(`select public.set_event_group($1, $2)`, [ev13, U.gR4]));
+  const sp = (await as(U.liderCamp, () => db.query(`select public.create_special_event($1, '2030-01-11', $2, 'Vigilia') id`, [U.slotCamp, U.gR2]))).rows[0].id;
+  await denied(() => as(U.coord1, () => db.query(`select public.create_special_event($1, '2030-01-18', $2)`, [U.slotCamp, U.gR2])), /No tienes permiso/);
+  await denied(() => as(U.liderCamp, () => db.query(`select public.create_special_event($1, '2030-01-11', $2)`, [U.slotCamp, U.gR2])), /unique|duplicate/i);
+
+  // Llega un quinto grupo: entra al final y, al regenerar desde febrero, la secuencia lo incluye
+  await db.query(`insert into public.groups (service_slot_id, name) values ($1, 'R5')`, [U.slotCamp]);
+  assert.equal((await one(`select rotation_order o from public.groups where name = 'R5' and service_slot_id = $1`, [U.slotCamp])).o, 5);
+  const r = await gen(U.liderCamp, U.slotCamp, '2030-02-03', '2030-03-03');
+  assert.equal(r.created, 0);
+  const feb = await rows(`select e.service_date::text d, g.name g from public.service_events e join public.groups g on g.id = e.group_id where e.slot_id = $1 and e.service_date >= '2030-02-03' and e.service_date <= '2030-03-03' order by 1`, [U.slotCamp]);
+  // turnos previos: 27/ene = R4 (turno 3) → 3-feb turno 4 = R5, luego R1, R2, R3, R4
+  assert.deepEqual(feb.map((x) => x.g), ['R5', 'R1', 'R2', 'R3', 'R4']);
+  // Lo anterior a la fecha de regeneración no cambió, y lo manual y lo especial siguen igual
+  assert.equal((await one(`select g.name n from public.service_events e join public.groups g on g.id = e.group_id where e.id = $1`, [ev13])).n, 'R4');
+  assert.equal((await one(`select g.name n from public.service_events e join public.groups g on g.id = e.group_id where e.id = $1`, [sp])).n, 'R2');
+  // Regenerar sobre un rango con un ajuste manual: se cuenta como "kept"
+  const r2 = await gen(U.liderCamp, U.slotCamp, '2030-01-01', '2030-01-20', U.gR1);
+  assert.equal(r2.kept, 1);                                   // el 13 de enero
+  // Reiniciar el ajuste vuelve a lo que dice la rotación
+  await as(U.liderCamp, () => db.query(`select public.reset_event_group($1)`, [ev13]));
+  assert.equal((await one(`select g.name n, manual from public.service_events e join public.groups g on g.id = e.group_id where e.id = $1`, [ev13])).n, 'R2');
+  await denied(() => as(U.liderCamp, () => db.query(`select public.reset_event_group($1)`, [sp])), /especial/);
+  // Un servicio especial se puede eliminar; uno de rotación, no
+  assert.equal(await as(U.liderCamp, async () => (await db.query(`delete from public.service_events where id = $1`, [ev13])).affectedRows), 0);
+  assert.equal(await as(U.liderCamp, async () => (await db.query(`delete from public.service_events where id = $1`, [sp])).affectedRows), 1);
+  // El cliente no puede insertar ni cambiar el grupo directamente
+  await denied(() => as(U.liderCamp, () => db.query(`update public.service_events set group_id = $2 where id = $1`, [ev13, U.gR3])), /permission denied/);
+  await denied(() => as(U.liderCamp, () => db.query(`insert into public.service_events (slot_id, service_date, group_id, turn) values ($1, '2031-01-05', $2, 0)`, [U.slotCamp, U.gR1])), /permission denied/);
+  // La nota sí
+  await as(U.liderCamp, () => db.query(`update public.service_events set note = 'Traer sillas' where id = $1`, [ev13]));
+  assert.equal((await one(`select note from public.service_events where id = $1`, [ev13])).note, 'Traer sillas');
+  assert.equal(await as(U.coord1, async () => (await db.query(`update public.service_events set note = 'x' where id = $1`, [ev13])).affectedRows), 0);
+});
+
+// Planeación: servicios de Castellana (sábado PM): G1 con coord1, coord2, sup1, sup2, vol1.
+test('fase 5 · planeación: borrador solo para planificadores, publicado para el grupo; varias personas por posición', async () => {
+  const slotSab = (await one(`select service_slot_id id from public.groups where id = $1`, [U.gCas1])).id;
+  await gen(U.liderCas, slotSab, '2030-01-01', '2030-01-31', U.gCas1);
+  const evs = await rows(`select id, service_date::text d, group_id from public.service_events where slot_id = $1 order by service_date`, [slotSab]);
+  U.evG1 = evs.find((e) => e.group_id === U.gCas1).id;
+  U.evG2 = evs.find((e) => e.group_id === U.gCas2).id;
+  // Posiciones de Castellana que aplican al sábado PM
+  const pos = async (kind) => (await one(`select p.id from public.positions p join public.locations l on l.id = p.location_id where l.site_id = $1 and p.kind = $2 and p.is_active and cardinality(p.days) = 0 and cardinality(p.shifts) = 0 order by p.sort limit 1`, [U.sCas, kind])).id;
+  U.posVol = await pos('voluntario'); U.posVol2 = (await one(`select p.id from public.positions p join public.locations l on l.id = p.location_id where l.site_id = $1 and p.kind = 'voluntario' and p.id <> $2 order by p.sort limit 1`, [U.sCas, U.posVol])).id;
+  U.posSup = await pos('supervisor');
+  const plan = (uid, ev, st) => as(uid, () => db.query(`insert into public.service_plans (event_id, status) values ($1, $2) on conflict (event_id) do update set status = excluded.status`, [ev, st]));
+  const assign = (uid, ev, p, u) => as(uid, () => db.query(`insert into public.service_assignments (event_id, position_id, user_id) values ($1, $2, $3) returning id`, [ev, p, u]));
+
+  // Planifican coordinadores, supervisores y el líder; el voluntario no
+  await plan(U.coord1, U.evG1, 'borrador');
+  await assign(U.sup1, U.evG1, U.posVol, U.vol1);
+  await assign(U.coord2, U.evG1, U.posVol, U.coord1);              // varias personas en la misma posición
+  await assign(U.liderCas, U.evG1, U.posVol2, U.vol1);             // una persona en varias posiciones
+  await denied(() => assign(U.vol1, U.evG1, U.posVol, U.coord1), /row-level security/);
+  await denied(() => plan(U.vol1, U.evG1, 'publicado'), /row-level security/);
+  await denied(() => assign(U.coord1, U.evG2, U.posVol, U.coord1), /row-level security|no pertenece/);      // coordinador del otro grupo no planifica este
+  await denied(() => assign(U.liderNogal2, U.evG1, U.posVol, U.vol1), /row-level security/);
+  await denied(() => assign(U.sup1, U.evG1, U.posVol, U.vol1), /duplicate|unique/i);
+  await as(U.sup1, () => db.query(`insert into public.service_position_notes (event_id, position_id, note) values ($1, $2, 'Llegar 30 min antes')`, [U.evG1, U.posVol]));
+  await denied(() => as(U.sup1, () => db.query(`insert into public.service_position_notes (event_id, position_id, note) values ($1, $2, '   ')`, [U.evG1, U.posVol2])), /check/);
+
+  // Borrador: lo ven los planificadores, no el voluntario ni quien no es del grupo
+  for (const u of [U.coord1, U.coord2, U.sup1, U.liderCas, U.cabeza, U.admin]) {
+    assert.equal(await as(u, () => count('service_assignments', `event_id = '${U.evG1}'`)), 3, 'planificador ve el borrador');
+    assert.equal(await as(u, () => count('service_position_notes', `event_id = '${U.evG1}'`)), 1);
+  }
+  for (const u of [U.vol1, U.volSuba, U.liderNogal]) {
+    assert.equal(await as(u, () => count('service_assignments', `event_id = '${U.evG1}'`)), 0, 'el borrador no se ve');
+    assert.equal(await as(u, () => count('service_position_notes', `event_id = '${U.evG1}'`)), 0);
+    assert.equal(await as(u, () => count('service_plans', `event_id = '${U.evG1}'`)), 0);
+  }
+  // Publicar: ahora lo ve todo el grupo (y su servicio aparece en el calendario de quien está asignado)
+  await plan(U.coord1, U.evG1, 'publicado');
+  assert.ok((await one(`select published_at, published_by from public.service_plans where event_id = $1`, [U.evG1])).published_by === U.coord1);
+  assert.equal(await as(U.vol1, () => count('service_assignments', `event_id = '${U.evG1}'`)), 3);
+  assert.equal(await as(U.vol1, () => count('service_position_notes', `event_id = '${U.evG1}'`)), 1);
+  assert.equal(await as(U.vol1, () => count('service_plans', `event_id = '${U.evG1}' and status = 'publicado'`)), 1);
+  assert.equal(await as(U.volSuba, () => count('service_assignments', `event_id = '${U.evG1}'`)), 0);   // otro grupo no ve
+  assert.equal(await as(U.liderNogal, () => count('service_assignments', `event_id = '${U.evG1}'`)), 0);
+  assert.equal(await as(U.vol1, () => count('service_events', `id = '${U.evG1}'`)), 1);
+  // Volver a borrador oculta de nuevo
+  await plan(U.coord1, U.evG1, 'borrador');
+  assert.equal(await as(U.vol1, () => count('service_assignments', `event_id = '${U.evG1}'`)), 0);
+  assert.equal((await one(`select published_at from public.service_plans where event_id = $1`, [U.evG1])).published_at, null);
+  await plan(U.coord1, U.evG1, 'publicado');
+});
+
+test('fase 5 · planeación: reglas de asignación (grupo, sede, día/franja, supervisor, posiciones ocultas)', async () => {
+  const assign = (uid, ev, p, u) => as(uid, () => db.query(`insert into public.service_assignments (event_id, position_id, user_id) values ($1, $2, $3)`, [ev, p, u]));
+  // Solo integrantes del grupo que sirve
+  await denied(() => assign(U.coord1, U.evG1, U.posVol2, U.volSuba), /no pertenece al grupo/);
+  await denied(() => assign(U.coord1, U.evG1, U.posVol2, U.liderCas), /no pertenece al grupo/);
+  // Posición de otra sede
+  const posSuba = (await one(`insert into public.positions (location_id, code, name, kind) select l.id, 'N-1', 'Nogal 1', 'voluntario' from public.locations l where l.site_id = $1 limit 1 returning id`, [U.sNogal])).id;
+  await denied(() => assign(U.coord1, U.evG1, posSuba, U.vol1), /no es de la sede/);
+  // Posición de supervisor: no para voluntarios; sí para supervisores y coordinadores
+  await denied(() => assign(U.coord1, U.evG1, U.posSup, U.vol1), /solo se asignan a supervisores/);
+  await assign(U.coord1, U.evG1, U.posSup, U.sup1);
+  await assign(U.coord1, U.evG1, U.posSup, U.coord2);
+  // Un supervisor puede tomar posición de voluntario
+  await assign(U.coord1, U.evG1, U.posVol2, U.sup1);
+  // Posición que no aplica a ese día / franja / oculta
+  const mk = async (code, extra) => (await one(`insert into public.positions (location_id, code, name, kind, ${extra.col}) select l.id, $2, $2, 'voluntario', ${extra.val} from public.locations l where l.site_id = $1 limit 1 returning id`, [U.sCas, code])).id;
+  const soloDom = await mk('T-DOM', { col: 'days', val: `'{domingo}'` });
+  const soloAm = await mk('T-AM', { col: 'shifts', val: `'{am}'` });
+  const oculta = await mk('T-OFF', { col: 'is_active', val: 'false' });
+  await denied(() => assign(U.coord1, U.evG1, soloDom, U.vol1), /no aplica a ese día/);
+  await denied(() => assign(U.coord1, U.evG1, soloAm, U.vol1), /no aplica a esa franja/);
+  await denied(() => assign(U.coord1, U.evG1, oculta, U.vol1), /oculta/);
+  // Servicio sin grupo: no se planea
+  const ev = (await one(`insert into public.service_events (slot_id, service_date, group_id, kind, manual) select slot_id, '2031-06-01', null, 'especial', true from public.service_events where id = $1 returning id`, [U.evG1])).id;
+  await denied(() => assign(U.admin, ev, U.posVol, U.vol1), /todavía no tiene un grupo/);
+  // Nota en posición de otra sede
+  await denied(() => as(U.coord1, () => db.query(`insert into public.service_position_notes (event_id, position_id, note) values ($1, $2, 'x')`, [U.evG1, posSuba])), /no es de la sede/);
+});
+
+test('fase 5 · planeación: cambiar de grupo el servicio borra la planeación; salir del grupo quita lo futuro y deja el historial', async () => {
+  const cnt = (ev) => count('service_assignments', `event_id = '${ev}'`);
+  assert.ok((await cnt(U.evG1)) >= 5);
+  // Regenerar con un cambio de grupo no pisa un servicio con planeación: queda "protected"
+  const slotSab = (await one(`select service_slot_id id from public.groups where id = $1`, [U.gCas1])).id;
+  const grpOf = async (ev) => (await one(`select group_id g from public.service_events where id = $1`, [ev])).g;
+  await db.query(`update public.groups set rotation_order = 2 where id = $1`, [U.gCas1]);
+  await db.query(`update public.groups set rotation_order = 1 where id = $1`, [U.gCas2]);
+  const r = await gen(U.liderCas, slotSab, '2030-01-01', '2030-01-31');
+  assert.ok(r.protected >= 1, 'el servicio con planeación no cambia de grupo');
+  assert.equal(await grpOf(U.evG1), U.gCas1);
+  assert.ok((await cnt(U.evG1)) >= 5, 'y conserva su planeación');
+  assert.equal(await grpOf(U.evG2), U.gCas1, 'el servicio sin planeación sí cambia con la rotación');
+  // Se restablece el orden y se regenera
+  await db.query(`update public.groups set rotation_order = 1 where id = $1`, [U.gCas1]);
+  await db.query(`update public.groups set rotation_order = 2 where id = $1`, [U.gCas2]);
+  assert.equal((await gen(U.liderCas, slotSab, '2030-01-01', '2030-01-31')).protected, 0);
+  assert.equal(await grpOf(U.evG2), U.gCas2);
+  // Cambiar el grupo de un servicio a mano borra la planeación del grupo anterior
+  const evM = (await one(`select id from public.service_events where id = $1`, [U.evG2])).id;
+  await db.query(`insert into public.service_plans (event_id, status) values ($1, 'borrador')`, [evM]);
+  await as(U.liderCas, () => db.query(`select public.set_event_group($1, $2)`, [evM, U.gCas1]));
+  assert.equal(await count('service_plans', `event_id = '${evM}'`), 0);
+  await as(U.liderCas, () => db.query(`select public.reset_event_group($1)`, [evM]));
+  assert.equal(await grpOf(evM), U.gCas2);
+  // Una asignación futura de vol1 desaparece cuando vol1 cambia de grupo; las pasadas se quedan
+  const past = (await one(`insert into public.service_events (slot_id, service_date, group_id, kind, manual) select slot_id, '2020-01-05', group_id, 'especial', true from public.service_events where id = $1 returning id`, [U.evG1])).id;
+  await db.query(`insert into public.service_assignments (event_id, position_id, user_id) values ($1, $2, $3)`, [past, U.posVol, U.vol1]);
+  const fut = (await one(`select count(*)::int n from public.service_assignments where user_id = $1 and event_id = $2`, [U.vol1, U.evG1])).n;
+  assert.ok(fut >= 1);
+  await db.query(`update public.memberships set group_id = $2 where user_id = $1`, [U.vol1, U.gCas2]);
+  assert.equal((await one(`select count(*)::int n from public.service_assignments where user_id = $1 and event_id = $2`, [U.vol1, U.evG1])).n, 0);
+  assert.equal((await one(`select count(*)::int n from public.service_assignments where user_id = $1 and event_id = $2`, [U.vol1, past])).n, 1, 'el historial pasado se conserva');
+  await db.query(`update public.memberships set group_id = $2 where user_id = $1`, [U.vol1, U.gCas1]);
+  // Un supervisor que baja a voluntario pierde sus posiciones de supervisor futuras, no las de voluntario
+  const supPos = async () => (await rows(`select p.kind from public.service_assignments a join public.positions p on p.id = a.position_id where a.user_id = $1 and a.event_id = $2`, [U.sup1, U.evG1])).map((x) => x.kind).sort();
+  assert.deepEqual(await supPos(), ['supervisor', 'voluntario']);
+  await db.query(`update public.memberships set role = 'voluntario' where user_id = $1`, [U.sup1]);
+  assert.deepEqual(await supPos(), ['voluntario']);
+  await db.query(`update public.memberships set role = 'supervisor' where user_id = $1`, [U.sup1]);
+  // Historial: cada quien ve el suyo, también el pasado de un grupo del que ya salió
+  await db.query(`update public.memberships set group_id = $2 where user_id = $1`, [U.vol1, U.gCas2]);
+  const hist = await as(U.vol1, () => count('service_assignments', `user_id = '${U.vol1}'`));
+  assert.equal(hist, 0, 'el borrador/publicación depende del servicio: sin plan publicado no hay historial visible al exmiembro');
+  await db.query(`update public.memberships set group_id = $2 where user_id = $1`, [U.vol1, U.gCas1]);
+});
+
+test('fase 5 · archivos de programación: solo planificadores suben; el grupo los ve; máximo 5; storage por servicio', async () => {
+  const file = (uid, ev, n, size = 1000) => as(uid, () => db.query(`insert into public.schedule_files (event_id, storage_path, file_name, mime_type, size_bytes) values ($1, $2, $3, 'application/pdf', $4)`, [ev, `castellana/${ev}/${n}.pdf`, `${n}.pdf`, size]));
+  await file(U.coord1, U.evG1, 'a');
+  await file(U.sup1, U.evG1, 'b');
+  await denied(() => file(U.vol1, U.evG1, 'c'), /row-level security/);
+  await denied(() => file(U.coord1, U.evG2, 'c'), /row-level security/);
+  await denied(() => file(U.coord1, U.evG1, 'd', 10485761), /check/);
+  await denied(() => file(U.coord1, U.evG1, 'e', 0), /check/);
+  // El grupo los ve; otro grupo no
+  assert.equal(await as(U.vol1, () => count('schedule_files', `event_id = '${U.evG1}'`)), 2);
+  assert.equal(await as(U.volSuba, () => count('schedule_files', `event_id = '${U.evG1}'`)), 0);
+  assert.equal(await as(U.liderNogal, () => count('schedule_files', `event_id = '${U.evG1}'`)), 0);
+  assert.equal(await as(U.liderCas, () => count('schedule_files', `event_id = '${U.evG1}'`)), 2);
+  // Máximo 5
+  for (const n of ['f3', 'f4', 'f5']) await file(U.coord1, U.evG1, n);
+  await denied(() => file(U.coord1, U.evG1, 'f6'), /Máximo 5/);
+  // Solo planificadores quitan
+  assert.equal(await as(U.vol1, async () => (await db.query(`delete from public.schedule_files where file_name = 'a.pdf'`)).affectedRows), 0);
+  assert.equal(await as(U.coord1, async () => (await db.query(`delete from public.schedule_files where file_name = 'a.pdf'`)).affectedRows), 1);
+
+  // Storage: la carpeta [1] es la sede y [2] el servicio
+  const obj = (uid, path) => as(uid, () => db.query(`insert into storage.objects (bucket_id, name) values ('schedules', $1)`, [path]));
+  await obj(U.coord1, `castellana/${U.evG1}/x.pdf`);
+  await denied(() => obj(U.vol1, `castellana/${U.evG1}/y.pdf`), /row-level security/);
+  await denied(() => obj(U.coord1, `castellana/${U.evG2}/y.pdf`), /row-level security/);
+  await denied(() => obj(U.coord1, `castellana/no-es-uuid/y.pdf`), /row-level security/);
+  await denied(() => obj(U.coord1, `solo.pdf`), /row-level security/);
+  const visible = (uid) => as(uid, async () => (await one(`select count(*)::int n from storage.objects where bucket_id = 'schedules'`)).n);
+  assert.equal(await visible(U.vol1), 1);
+  assert.equal(await visible(U.volSuba), 0);
+  assert.equal(await visible(U.liderNogal), 0);
+  assert.equal((await one(`select public from storage.buckets where id = 'schedules'`)).public, false);
+});
+
+test('fase 5 · el grupo que sirve ve su servicio; quien no, no; anon nada; fechas y limpieza al borrar', async () => {
+  assert.equal(await as(U.vol1, () => count('service_events', `id = '${U.evG1}'`)), 1);
+  assert.equal(await as(U.volSuba, () => count('service_events', `id = '${U.evG1}'`)), 0);
+  assert.equal(await as(U.liderNogal, () => count('service_events', `id = '${U.evG1}'`)), 0);
+  assert.equal(await as(U.liderCas, () => count('service_events', `id = '${U.evG1}'`)), 1);
+  for (const t of ['service_events', 'service_cancellations', 'service_plans', 'service_assignments', 'service_position_notes', 'schedule_files']) {
+    await db.exec(`set role anon`);
+    try { await denied(() => db.query(`select * from public.${t}`), /permission denied/); } finally { await db.exec(`reset role`); }
+  }
+  assert.equal((await one(`select public.today_co() = (now() at time zone 'America/Bogota')::date ok`)).ok, true);
+  // Borrar un horario borra servicios y su planeación
+  const n = await count('service_assignments');
+  assert.ok(n > 0);
+  const slotSab = (await one(`select service_slot_id id from public.groups where id = $1`, [U.gCas1])).id;
+  await db.query(`update public.service_events set group_id = null where slot_id = $1`, [slotSab]);
+  assert.equal(await count('service_assignments', `event_id in (select id from public.service_events where slot_id = '${slotSab}')`), 0, 'sin grupo no queda planeación');
+  assert.equal(await count('service_plans', `event_id in (select id from public.service_events where slot_id = '${slotSab}')`), 0);
+});
