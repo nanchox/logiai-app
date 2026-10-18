@@ -1,13 +1,19 @@
 import Link from "next/link";
 import { AnnouncementCard } from "@/components/announcements/AnnouncementCard";
 import { loadAnnouncements } from "@/lib/announcements/load";
+import { formatServiceDate, todayCo } from "@/lib/service/dates";
+import { loadEvents } from "@/lib/service/load";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 
 export default async function HomePage() {
   const user = await requireUser();
 
-  const recent = (await loadAnnouncements(await createClient(), 30)).filter((a) => a.status === "active").slice(0, 3);
+  const supabase = await createClient();
+  const recent = (await loadAnnouncements(supabase, 30)).filter((a) => a.status === "active").slice(0, 3);
+  const nextService = user.membership
+    ? (await loadEvents(supabase, { from: todayCo(), groupId: user.membership.groupId, limit: 6 })).find((e) => e.status === "programado")
+    : undefined;
 
   const scope = user.isAdmin || user.isHead
     ? "Todas las sedes"
@@ -30,6 +36,11 @@ export default async function HomePage() {
           <h2 className="text-sm font-bold uppercase tracking-wider text-muted">Mi grupo</h2>
           <p className="mt-1 text-xl font-bold">{user.membership.groupName}</p>
           <p className="text-muted">{user.membership.service} · {user.membership.site.name}</p>
+          <p className="mt-3 text-sm">
+            {nextService
+              ? <>Próximo servicio: <Link href={`/servicio/${nextService.id}`} className="font-semibold">{formatServiceDate(nextService.date)}</Link></>
+              : <Link href="/servicio" className="font-semibold">Ver mi servicio →</Link>}
+          </p>
         </section>
       ) : (
         <section className="rounded-2xl border border-line bg-surface p-5 text-muted">

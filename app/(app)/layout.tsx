@@ -17,6 +17,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link href="/" className={navLink}>Inicio</Link>
             <Link href="/novedades" className={navLink}>Novedades</Link>
             <Link href="/manual" className={navLink}>Manual</Link>
+            <Link href="/servicio" className={navLink}>Mi servicio</Link>
             {user.membership && <Link href="/grupo" className={navLink}>Mi grupo</Link>}
             {user.canManagePeople && <Link href="/personas" className={navLink}>Personas</Link>}
           </nav>
