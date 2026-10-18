@@ -1,7 +1,7 @@
 # LogiAI
 
 Manual de logística y servicio de **El Lugar de Su Presencia**: mapas, posiciones, indicaciones, novedades y chat con IA.
-El plan completo está en [`PLAN.md`](PLAN.md). Estado actual: **Fases 1 a 4** completas (base, login, permisos, manual con mapas y posiciones, fotos, videos, flujos, personas y grupos, y novedades). Siguen rotación y calendario, y el chat de IA.
+El plan completo está en [`PLAN.md`](PLAN.md). Estado actual: **Fases 1 a 5** completas (base, login, permisos, manual con mapas y posiciones, fotos, videos, flujos, personas y grupos, novedades, y rotación y servicio). Sigue el chat de IA.
 
 - **App:** Next.js 16 (App Router) en Vercel · **Datos, login y archivos:** Supabase
 - `legacy/` — prototipo original (HTML estático) y las imágenes de mapas de Castellana
@@ -89,9 +89,17 @@ Cabeza de ministerio y administrador ven todo.
 - **Vigencia:** se puede programar la publicación y dar una fecha de fin. Quien lo administra ve también los programados y los vencidos, marcados como tales; los demás, solo los vigentes. Las fechas se escriben y se muestran en hora de Colombia.
 - Cada novedad muestra quién la publicó, con su nombre y rol (nunca su correo).
 
+## Rotación y servicio
+- **Rotación** (Personas → Rotación, para líder de sede, cabeza y administrador): cada horario de cada sede rota sus grupos semana a semana, de forma **independiente** a las demás sedes. El líder ordena los grupos, genera las fechas (hasta 400 días por vez) y, si agrega un grupo, vuelve a generar hacia adelante: lo ajustado a mano y los servicios especiales no se tocan, y un servicio que ya tiene planeación o archivos conserva su grupo.
+- **Cancelaciones:** una fecha cancelada **consume su turno** (ese grupo lo pierde y la rotación sigue por calendario). El líder cancela un horario o todos los de su sede; cabeza y administrador, también todas las sedes. Los coordinadores solo ven el calendario.
+- **Servicios especiales:** se crean a mano (fecha, grupo y nota) y no entran en la rotación.
+- **Mi servicio:** el próximo servicio del grupo, el calendario de las próximas 8 semanas y el historial de posiciones de cada persona (de la planeación publicada).
+- **Planeación de posiciones** (coordinadores y supervisores del grupo que sirve, y el líder de la sede): se asignan personas a las posiciones del manual que aplican a ese día y franja. Una posición puede tener varias personas y una persona varias posiciones; cada posición admite una nota. **Los coordinadores coordinan el grupo y no ocupan posiciones**; las posiciones de supervisor son solo para supervisores. El **borrador** lo ven solo coordinadores y supervisores; al **publicar**, todo el grupo. Se puede copiar la planeación del servicio anterior como punto de partida. No hay confirmación de asistencia.
+- **Programación en archivo:** en lugar de (o además de) la planeación en la plataforma, se puede subir la programación como PDF, Excel o imagen (hasta 5 archivos de 10 MB por servicio). La ve todo el grupo con enlaces firmados.
+
 ## Actualizar una instalación existente
 Cada fase nueva trae migraciones. El orden seguro es:
 1. Publica primero el código nuevo (fusiona el pull request y espera el despliegue de Vercel).
 2. Luego aplica las migraciones: `npx supabase db push`.
 
-Notas por fase: la `20261019000001_people.sql` quita el correo de `profiles` y lo mueve a `profile_private`; la `20261020000001_announcements.sql` crea los anuncios (hasta aplicarla, el inicio muestra «No hay anuncios por ahora»).
+Notas por fase: la `20261019000001_people.sql` quita el correo de `profiles` y lo mueve a `profile_private`; la `20261020000001_announcements.sql` crea los anuncios (hasta aplicarla, el inicio muestra «No hay anuncios por ahora»); la `20261021000001_rotation.sql` crea la rotación, la planeación y el bucket privado `schedules` (hasta aplicarla, Mi servicio y Rotación no funcionan).
