@@ -46,7 +46,7 @@ export function LeadersAdmin({ viewerId, isAdmin, sites, leaders, admins, pendin
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {l.sites.map((s) => (
-                    <span key={s.id} className="inline-flex items-center gap-1 rounded-full bg-bronze px-3 py-1 text-sm font-bold text-on-bronze">
+                    <span key={s.id} className="inline-flex items-center gap-1 rounded-full bg-badge px-3 py-1 text-sm font-bold text-on-badge">
                       {s.name}
                       {l.sites.length > 1 && (
                         <button type="button" aria-label={`Quitar ${s.name} a ${l.name}`} className="ml-1 font-black" disabled={busy} onClick={() => run(() => removeLeaderSite(sb, l.userId, s.id))}>✕</button>

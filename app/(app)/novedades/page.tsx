@@ -5,9 +5,9 @@ import { loadAnnouncements } from "@/lib/announcements/load";
 import { loadGroups, loadSites, viewerOf } from "@/lib/people/load";
 import { createClient } from "@/lib/supabase/server";
 
-export const metadata: Metadata = { title: "Anuncios" };
+export const metadata: Metadata = { title: "Novedades" };
 
-export default async function AnnouncementsPage() {
+export default async function NovedadesPage() {
   const user = await requireUser();
   const viewer = viewerOf(user);
   const supabase = await createClient();
@@ -19,7 +19,7 @@ export default async function AnnouncementsPage() {
 
   return (
     <main>
-      <h1 className="mb-1 text-2xl font-extrabold">Anuncios</h1>
+      <h1 className="mb-1 text-2xl font-extrabold">Novedades</h1>
       <p className="mb-5 text-muted">Noticias, cambios y avisos para tu sede, tu día y tu grupo.</p>
       <AnnouncementsClient items={items} viewer={viewer} sites={sites} groups={groups} />
     </main>

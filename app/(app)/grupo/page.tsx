@@ -42,7 +42,7 @@ export default async function MyGroupPage() {
             <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {list.map((p) => (
                 <li key={p.userId} className="flex items-center gap-3 rounded-xl border border-line bg-surface p-3">
-                  <span aria-hidden className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-black ${role === "coordinador" ? "bg-bronze text-on-bronze" : "bg-bg"}`}>{initials(p.name)}</span>
+                  <span aria-hidden className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-black ${role === "coordinador" ? "bg-badge text-on-badge" : "bg-bg"}`}>{initials(p.name)}</span>
                   <span className="min-w-0">
                     <span className="block truncate font-semibold">{p.name}{p.userId === user.id && <span className="ml-2 text-xs text-muted">(tú)</span>}</span>
                     <span className="block text-xs text-muted">{ROLE_LABEL[role]}</span>

@@ -22,7 +22,7 @@ No se usa Railway.
 | **Admin / desarrollador** (`hhherrerap@gmail.com`, también líder de sede) | No | Todo | Configuración técnica, catálogos, invitaciones a cualquier grupo |
 | **Cabeza de ministerio** (`mreyes@supresencia.com`) | No | Todas las sedes y todos los grupos | Lo mismo que un líder de sede, pero en todas las sedes |
 | **Líder de sede** (auditor, acompaña a los grupos) | No | Su sede completa: manual y todos sus grupos | Crea grupos, asigna **coordinadores y supervisores**, edita el manual de su sede, anuncios de su sede |
-| **Coordinador** (máx. 2 por grupo) | Sí, uno solo | Manual de su sede + su grupo | Agrega **supervisores y voluntarios** a su grupo, carga la programación, planea posiciones, anuncios de su grupo |
+| **Coordinador** (máx. 2 por grupo) | Sí, uno solo | Manual de su sede + su grupo | Agrega **supervisores y voluntarios** a su grupo, carga la programación, planea posiciones (él no ocupa posiciones: coordina), novedades de su grupo |
 | **Supervisor** (varios por grupo) | Sí, uno solo | Manual de su sede + su grupo | Planea y asigna posiciones del próximo servicio |
 | **Voluntario** | Sí, uno solo | Manual de su sede + su grupo | — |
 
@@ -97,15 +97,15 @@ El generador crea los `service_events` hasta una fecha límite. Al volver a gene
 | `maps` | `/{sede}/{location}/{mapa}-v{n}.png` |
 | `position-media` | `/{sede}/{posición}/…` (solo fotos; los videos son links de YouTube) |
 | `schedules` | `/{sede}/{grupo}/{período}.pdf` |
-| `announcements` | Adjuntos de los anuncios |
+| `announcements` | Adjuntos de las novedades |
 
 Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son privados y se accede con URLs firmadas, con las mismas reglas de visibilidad por sede y grupo.
 
 ## 6. Pantallas
-1. **Mi servicio:** próxima fecha, grupo, mis posiciones asignadas, anuncios que me aplican.
+1. **Mi servicio:** próxima fecha, grupo, mis posiciones asignadas, novedades que me aplican.
 2. **Manual:** sede → location → mapa → zona → pin. La ficha de cada posición muestra descripción, fotos, video, radio y ubicación en el mapa. Filtro por día y franja, que por defecto es el del usuario.
 3. **Flujos:** qué hacer cuando se llena el auditorio principal, paso a paso, por sede.
-4. **Anuncios:** por sede, por sede y día, o por grupo, con links.
+4. **Novedades:** por sede, por sede y día, o por grupo, con links.
 5. **Calendario y rotación:** fechas de servicio de mi grupo, cancelaciones y programación en PDF o imagen.
 6. **Planeación:** para coordinadores y supervisores.
 7. **Mi grupo:** miembros y roles.
@@ -116,19 +116,19 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 ### Paleta
 | Color | Uso |
 |---|---|
-| `#800080` púrpura | Color principal: barra, botones |
-| `#FFD700` dorado | Acentos, ítem activo (en modo claro solo como relleno con texto oscuro) |
-| `#800020` vinotinto | Superficies y encabezados en modo oscuro |
-| `#FF0000` rojo | Pin de supervisor, alertas |
-| `#00BFFF` celeste | Pin de voluntario, links (en modo claro, como relleno) |
-| `#CD7F32` bronce | Insignias de coordinador y líder |
+| `#0B0713` negro | Barra superior en modo claro, texto, fondo del modo oscuro |
 | `#FFFFFF` blanco | Fondo del modo claro, texto del modo oscuro |
+| `#FFD700` dorado | Acentos, ítem activo, insignias de rol, links en modo oscuro (en modo claro solo como relleno con texto oscuro) |
+| `#6D28D9` / `#8B3DFF` morado brillante | Color principal: botones y links (más claro en modo oscuro) |
+| `#2B0A55` / `#4C1D95` morado oscuro | Barra superior en modo oscuro y botones de cierre |
+| `#C084FC` lila | Pin de voluntario |
+| `#E11D48` rojo | Pin de supervisor y alertas |
 
 ## 7. Chat IA (OpenRouter, modelo gratuito)
 - Ruta de servidor `/api/chat`. La clave de OpenRouter vive solo en Vercel. El modelo se define con `OPENROUTER_MODEL`.
 - **No depende de herramientas (tool calling)**, porque los modelos gratuitos que rotan no lo soportan de forma confiable. En cada pregunta el servidor:
   1. Carga el contexto del usuario: sede, grupo, próxima fecha y posiciones asignadas.
-  2. Busca con texto completo en español (Postgres `tsvector`) en posiciones, zonas, flujos, anuncios y programaciones. La búsqueda corre **con la sesión del usuario**, así que RLS solo devuelve lo que esa persona puede ver.
+  2. Busca con texto completo en español (Postgres `tsvector`) en posiciones, zonas, flujos, novedades y programaciones. La búsqueda corre **con la sesión del usuario**, así que RLS solo devuelve lo que esa persona puede ver.
   3. Envía al modelo un system prompt fijo y los fragmentos encontrados. El modelo **responde solo con lo cargado** y cita la fuente con un link.
 - No se envían correos ni otros datos personales al modelo.
 - Hay un límite diario de mensajes por usuario, porque los modelos gratuitos tienen cupo.
@@ -137,13 +137,13 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 
 ## 8. Fases
 
-**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ✅ Fase 4 · ⬜ Fase 5 · ⬜ Fase 6 · ⬜ Fase 7
+**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ✅ Fase 4 · ✅ Fase 5 · ⬜ Fase 6 · ⬜ Fase 7
 
 1. **Base:** proyecto Next.js, esquema y RLS, login con Google y hook de lista blanca, roles, tema claro/oscuro, carga inicial (sedes, locations, admin, cabeza), importación del prototipo actual (mapa y zonas 1 a 6 de Castellana, Auditorio principal).
 2. **Manual (núcleo):** visor de mapas y pines, fichas de posición con fotos y YouTube, editor de pines, carga y reemplazo de mapas, posiciones por día y franja, flujos.
 3. **Personas y grupos:** agregar correos con rol (coordinador a su grupo, líder a su sede, cabeza y administrador a cualquiera), horarios y grupos, mover/cambiar rol/eliminar de la aplicación, líderes de sede, "Mi grupo". **Los correos son privados** (solo la persona y quien la administra).
-4. **Anuncios:** noticias, cambios y avisos para toda la iglesia, una sede, una sede y un día, un día en todas las sedes, o un grupo; con enlaces, fijado, programación y vencimiento. Publican cabeza/admin (todo), líder (su sede) y coordinador (su grupo).
-5. **Rotación y servicio:** rotación y cancelaciones, calendario, programación en PDF o imagen, planeación de posiciones.
+4. **Novedades:** noticias, cambios y avisos para toda la iglesia, una sede, una sede y un día, un día en todas las sedes, o un grupo; con enlaces, fijado, programación y vencimiento. Publican cabeza/admin (todo), líder (su sede) y coordinador (su grupo).
+5. **Rotación y servicio:** rotación por horario y sede, cancelaciones que consumen el turno, servicios especiales, calendario, programación en PDF, Excel o imagen, planeación de posiciones con borrador y publicación, historial por persona.
 6. **Chat IA.**
 7. **Lanzamiento ampliado:** PWA instalable, ajustes, Supabase Pro, publicación a unas 2000 personas.
 

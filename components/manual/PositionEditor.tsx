@@ -136,7 +136,7 @@ function Form({ position, siteSlug, locationId, zones, nextCode, onClose, onChan
           <p className="rounded-lg border border-line bg-surface p-3 text-sm text-muted">Crea la posición para poder agregarle fotos, videos y enlaces.</p>
         )}
       </div>
-      <button type="button" onClick={onClose} className="shrink-0 bg-wine p-4 font-bold text-white">CERRAR</button>
+      <button type="button" onClick={onClose} className="shrink-0 bg-deep p-4 font-bold text-white">CERRAR</button>
     </div>
   );
 }

@@ -15,7 +15,7 @@ type Props = { open: boolean; item: AnnouncementItem | null; viewer: Viewer; sit
 
 export function AnnouncementDialog(props: Props) {
   return (
-    <ModalDialog open={props.open} onClose={props.onClose} size="lg" title={props.item ? "Editar anuncio" : "Nuevo anuncio"}>
+    <ModalDialog open={props.open} onClose={props.onClose} size="lg" title={props.item ? "Editar novedad" : "Nueva novedad"}>
       {props.open && <Form key={props.item?.id ?? "new"} {...props} />}
     </ModalDialog>
   );
@@ -86,8 +86,8 @@ function Form({ item, viewer, sites, groups, onClose, onSaved }: Props) {
 
   return (
     <div className="flex max-h-[90vh] flex-col">
-      <form onSubmit={submit} className="space-y-4 overflow-y-auto p-6" aria-label={item ? "Editar anuncio" : "Nuevo anuncio"}>
-        <h2 className="text-xl font-extrabold text-link">{item ? "Editar anuncio" : "Nuevo anuncio"}</h2>
+      <form onSubmit={submit} className="space-y-4 overflow-y-auto p-6" aria-label={item ? "Editar novedad" : "Nueva novedad"}>
+        <h2 className="text-xl font-extrabold text-link">{item ? "Editar novedad" : "Nueva novedad"}</h2>
 
         <div>
           <label className={label} htmlFor="an-title">Título</label>
@@ -134,7 +134,7 @@ function Form({ item, viewer, sites, groups, onClose, onSaved }: Props) {
           {kind === "group" && (
             <div>
               <label className={label} htmlFor="an-group">Grupo</label>
-              <GroupSelect id="an-group" label="Grupo del anuncio" groups={groups} value={groupId} onChange={setGroupId} disabled={viewer.kind === "coordinator"} />
+              <GroupSelect id="an-group" label="Grupo de la novedad" groups={groups} value={groupId} onChange={setGroupId} disabled={viewer.kind === "coordinator"} />
             </div>
           )}
           <p className="text-sm text-muted" role="note">{audience[kind]}</p>
@@ -169,14 +169,14 @@ function Form({ item, viewer, sites, groups, onClose, onSaved }: Props) {
           <button className={btnPrimary} disabled={busy}>{busy ? "Guardando…" : item ? "Guardar cambios" : "Publicar"}</button>
           {item && (
             <button type="button" className={btnDanger} disabled={busy} onClick={async () => {
-              if (!window.confirm(`¿Eliminar el anuncio «${item.title}»? No se puede deshacer.`)) return;
+              if (!window.confirm(`¿Eliminar la novedad «${item.title}»? No se puede deshacer.`)) return;
               setBusy(true);
               try { await deleteAnnouncement(sb, item.id); onSaved(); onClose(); } catch (err) { setError((err as Error).message); setBusy(false); }
-            }}>Eliminar anuncio</button>
+            }}>Eliminar novedad</button>
           )}
         </div>
       </form>
-      <button type="button" onClick={onClose} className="shrink-0 bg-wine p-4 font-bold text-white">CERRAR</button>
+      <button type="button" onClick={onClose} className="shrink-0 bg-deep p-4 font-bold text-white">CERRAR</button>
     </div>
   );
 }
