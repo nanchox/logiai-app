@@ -100,7 +100,8 @@ Cabeza de ministerio y administrador ven todo.
 ## Asistente (chat IA)
 Pantalla **Asistente** (menú superior), para cualquier persona con cuenta. Responde dudas con lo que está cargado: posiciones del manual, flujos y novedades vigentes.
 
-- **Solo con lo cargado:** en cada pregunta el servidor busca en español (texto completo de Postgres) y le pasa al modelo únicamente los fragmentos encontrados y unos pocos datos de la persona (rol, sede, grupo, próximo servicio y sus posiciones publicadas). Si no está en lo cargado, el asistente lo dice. Cita las fuentes con enlace (los enlaces los arma el servidor, no el modelo).
+- **Conversa en lo básico:** saluda, dice quién es (el Asistente de LogiAI, una IA), para qué fue creado y cuál es su alcance, y guía con «¿qué puedo hacer?» usando una guía de la aplicación **adaptada al rol** de la persona (un voluntario no recibe opciones de administración). Fuera de su alcance (temas ajenos a la aplicación) lo dice con amabilidad. Esas respuestas no necesitan fuentes.
+- **Solo con lo cargado (datos de logística):** en cada pregunta el servidor busca en español (texto completo de Postgres) y le pasa al modelo únicamente los fragmentos encontrados y unos pocos datos de la persona (rol, sede, grupo, próximo servicio y sus posiciones publicadas). Si no está en lo cargado, el asistente lo dice. Cita las fuentes con enlace (los enlaces los arma el servidor, no el modelo).
 - **Permisos:** la búsqueda corre **con la sesión de la persona**, así que solo encuentra lo que sus permisos (RLS) le dejan ver: una voluntaria de Castellana nunca recibe contenido de Nogal.
 - **Privacidad:** no se envían correos ni nombres al modelo. El contenido de las novedades se entrega como datos, con la instrucción de no obedecer órdenes escritas dentro.
 - **No usa herramientas:** los modelos gratuitos que rotan no las soportan de forma fiable. Tampoco lee el contenido de los archivos de programación (PDF, Excel, imágenes).

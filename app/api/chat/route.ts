@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { personContext } from "@/lib/chat/context";
+import { type GuideUser, guideFor } from "@/lib/chat/guide";
 import { askModel, ChatUnavailableError, parseModels } from "@/lib/chat/openrouter";
 import { buildMessages, cleanHistory, cleanQuestion, MAX_QUESTION } from "@/lib/chat/prompt";
 import { type SearchRow, toFragments } from "@/lib/chat/sources";
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
       apiKey,
       baseUrl: process.env.OPENROUTER_BASE_URL,
       models: parseModels(process.env.OPENROUTER_MODEL),
-      messages: buildMessages({ question, history, context, fragments }),
+      messages: buildMessages({ question, history, context, fragments, guide: guideFor({ isAdmin: user.isAdmin, isHead: user.isHead, isLeader: user.leaderSites.length > 0, groupRole: (user.membership?.role as GuideUser["groupRole"]) ?? null }) }),
       referer: new URL(req.url).origin,
     });
     return NextResponse.json({
