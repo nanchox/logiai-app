@@ -14,6 +14,7 @@ const fail = (status: number, error: string) => NextResponse.json({ error }, { s
 export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return fail(401, "Inicia sesión para usar el asistente.");
+  if (!user.privacyAccepted) return fail(403, "Acepta la política de datos y los términos para usar el asistente.");
 
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return fail(503, "El asistente todavía no está configurado.");

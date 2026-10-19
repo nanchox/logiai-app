@@ -2,6 +2,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { GROUP_ROLE_LABEL, serviceLabel } from "@/lib/labels";
+import { POLICY_VERSION } from "@/lib/legal/config";
 
 export type Site = { id: string; slug: string; name: string };
 
@@ -20,6 +21,8 @@ export type CurrentUser = {
   canManageGroups: boolean;
   /** Etiqueta principal del rol, para mostrar en la interfaz. */
   roleLabel: string;
+  /** Aceptó la versión vigente de la política de datos y los términos. */
+  privacyAccepted: boolean;
 };
 
 type MembershipRow = {
@@ -40,7 +43,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return null;
 
-  const [profileRes, leadersRes, membershipRes] = await Promise.all([
+  const [profileRes, leadersRes, membershipRes, consentRes] = await Promise.all([
     supabase.from("profiles").select("full_name, avatar_url, is_admin, is_head").eq("user_id", auth.user.id).maybeSingle(),
     supabase.from("site_leaders").select("sites(id, slug, name)").eq("user_id", auth.user.id),
     supabase
@@ -48,6 +51,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
       .select("role, group_id, groups(name, service_slots(day, shift, sites(id, slug, name)))")
       .eq("user_id", auth.user.id)
       .maybeSingle(),
+    supabase.from("consents").select("policy_version").eq("user_id", auth.user.id).eq("policy_version", POLICY_VERSION).maybeSingle(),
   ]);
   const profile = profileRes.data;
   if (!profile) return null;
@@ -89,6 +93,8 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     canManagePeople: profile.is_admin || profile.is_head || leaderSites.length > 0 || membership?.role === "coordinador",
     canManageGroups: profile.is_admin || profile.is_head || leaderSites.length > 0,
     roleLabel,
+    // Si la tabla todavía no existe (migración pendiente) no se bloquea a nadie; cualquier otro error exige aceptar.
+    privacyAccepted: !!consentRes.data || consentRes.error?.code === "PGRST205",
   };
 });
 

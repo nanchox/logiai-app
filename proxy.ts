@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseConfig } from "@/lib/supabase/env";
 
-const PUBLIC_PATHS = ["/login", "/auth"];
+const PUBLIC_PATHS = ["/login", "/auth", "/politica", "/terminos"];
 
 // Refresca la sesión de Supabase en cada petición y envía a /login a quien no la tenga.
 // Es solo una comprobación optimista: los permisos reales los aplica RLS en la base de datos.

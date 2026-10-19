@@ -15,6 +15,7 @@ export function guideFor(u: GuideUser): string[] {
     "Manual: mapas con las posiciones de tu sede (pines), cada posición con su descripción, fotos, videos de YouTube y uso de radio; también los flujos (qué hacer, por ejemplo, cuando se llena el auditorio principal). Se puede filtrar por día y franja.",
     "Mi servicio: cuándo sirve tu grupo (calendario de las próximas semanas, con las fechas canceladas), las posiciones que te asignaron cuando la planeación está publicada, y tu historial de posiciones.",
     "Asistente (esta pantalla): resuelve dudas con lo que está cargado en la aplicación.",
+    "Perfil (tu nombre arriba): ves tus datos, la política de datos y los términos y condiciones, puedes descargar tus datos y eliminar tu cuenta cuando quieras.",
   ];
   if (u.groupRole) lines.splice(4, 0, "Mi grupo: quiénes sirven contigo y con qué rol (nunca se ven los correos de otros).");
   if (u.groupRole === "coordinador") {
