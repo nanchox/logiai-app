@@ -10,7 +10,6 @@ export type CurrentUser = {
   id: string;
   email: string;
   name: string;
-  avatarUrl: string | null;
   isAdmin: boolean;
   isHead: boolean;
   leaderSites: Site[];
@@ -44,7 +43,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   if (!auth.user) return null;
 
   const [profileRes, leadersRes, membershipRes, consentRes] = await Promise.all([
-    supabase.from("profiles").select("full_name, avatar_url, is_admin, is_head").eq("user_id", auth.user.id).maybeSingle(),
+    supabase.from("profiles").select("full_name, is_admin, is_head").eq("user_id", auth.user.id).maybeSingle(),
     supabase.from("site_leaders").select("sites(id, slug, name)").eq("user_id", auth.user.id),
     supabase
       .from("memberships")
@@ -85,7 +84,6 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     // El correo viene de la sesión: ya no se guarda en el perfil (es privado).
     email: auth.user.email ?? "",
     name: profile.full_name ?? auth.user.email ?? "Sin nombre",
-    avatarUrl: profile.avatar_url,
     isAdmin: profile.is_admin,
     isHead: profile.is_head,
     leaderSites,

@@ -50,20 +50,20 @@ export async function loadGroups(supabase: SupabaseClient): Promise<GroupItem[]>
 
 type MemberRow = {
   user_id: string; role: GroupRole; group_id: string;
-  profiles: { full_name: string | null; avatar_url: string | null; profile_private: { email: string } | null } | null;
+  profiles: { full_name: string | null; profile_private: { email: string } | null } | null;
 };
 
 /** Integrantes de un grupo. El correo solo llega si la base de datos permite verlo (lo decide RLS, no la interfaz). */
 export async function loadMembers(supabase: SupabaseClient, groupId: string): Promise<MemberItem[]> {
   const { data } = await supabase
     .from("memberships")
-    .select("user_id, role, group_id, profiles(full_name, avatar_url, profile_private(email))")
+    .select("user_id, role, group_id, profiles(full_name, profile_private(email))")
     .eq("group_id", groupId);
   const order: Record<string, number> = { coordinador: 0, supervisor: 1, voluntario: 2 };
   return ((data ?? []) as unknown as MemberRow[])
     .map((m) => ({
       userId: m.user_id, role: m.role, groupId: m.group_id,
-      name: m.profiles?.full_name ?? "Integrante", avatarUrl: m.profiles?.avatar_url ?? null,
+      name: m.profiles?.full_name ?? "Integrante",
       email: m.profiles?.profile_private?.email ?? null,
     }))
     .sort((a, b) => order[a.role] - order[b.role] || naturalCompare(a.name, b.name));

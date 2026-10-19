@@ -37,7 +37,7 @@ export function AcceptForm({ userId, version, blockedDelete }: { userId: string;
     <div className="space-y-4">
     <form onSubmit={submit} className="space-y-4" aria-label="Aceptar política de datos y términos">
       <ul className="list-disc space-y-1 pl-5 text-sm">
-        <li>Usamos tu nombre, foto y correo de Google, y tu sede, grupo, rol y posiciones, solo para organizar el servicio.</li>
+        <li>Guardamos tu nombre y tu correo de Google, y tu sede, grupo, rol y posiciones, solo para organizar el servicio.</li>
         <li>Tu correo es privado: solo lo ven tú y quien te administra.</li>
         <li>No vendemos tus datos ni los usamos para publicidad.</li>
         <li>Puedes ver, descargar y <strong>eliminar tu cuenta cuando quieras</strong> desde tu Perfil.</li>
@@ -45,8 +45,8 @@ export function AcceptForm({ userId, version, blockedDelete }: { userId: string;
       <label className="flex items-start gap-3 text-sm">
         <input type="checkbox" className={box} checked={data} onChange={(e) => setData(e.target.checked)} />
         <span>
-          Autorizo de manera previa, expresa e informada el tratamiento de mis datos personales, incluidos los que pueden revelar mis convicciones religiosas (dato sensible,
-          cuya autorización es facultativa), y su transmisión y transferencia a los proveedores descritos, conforme a la{" "}
+          Autorizo el tratamiento de mis datos personales, incluido el que puede revelar mis convicciones religiosas (dato sensible; es voluntario autorizarlo), y su envío a los
+          proveedores descritos, conforme a la{" "}
           <Link href="/politica" target="_blank" rel="noreferrer">Política de tratamiento de datos personales</Link> (Ley 1581 de 2012).
         </span>
       </label>

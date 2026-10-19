@@ -27,7 +27,7 @@ export async function deleteMyAccount(sb: SupabaseClient) {
 /** Reúne todo lo que la aplicación guarda de la persona (derecho de acceso) en un objeto listo para descargar. */
 export async function collectMyData(sb: SupabaseClient, userId: string, email: string) {
   const [profile, memberships, consents, history] = await Promise.all([
-    sb.from("profiles").select("full_name, avatar_url, is_admin, is_head, created_at").eq("user_id", userId).maybeSingle(),
+    sb.from("profiles").select("full_name, is_admin, is_head, created_at").eq("user_id", userId).maybeSingle(),
     sb.from("memberships").select("role, groups(name, service_slots(day, shift, sites(name)))").eq("user_id", userId),
     sb.from("consents").select("policy_version, accepted_at").eq("user_id", userId).order("accepted_at"),
     loadHistory(sb, userId, 1000),
@@ -36,7 +36,7 @@ export async function collectMyData(sb: SupabaseClient, userId: string, email: s
   return {
     generadoEn: new Date().toISOString(),
     descripcion: "Datos personales que LogiAI guarda sobre ti. No incluye el contenido de las conversaciones con el asistente porque no se guarda.",
-    cuenta: { correo: email, nombre: profile.data?.full_name ?? null, foto: profile.data?.avatar_url ?? null, administrador: !!profile.data?.is_admin, cabezaDeMinisterio: !!profile.data?.is_head, creadaEn: profile.data?.created_at ?? null },
+    cuenta: { correo: email, nombre: profile.data?.full_name ?? null, administrador: !!profile.data?.is_admin, cabezaDeMinisterio: !!profile.data?.is_head, creadaEn: profile.data?.created_at ?? null },
     sedesQueLidera: (leads.data ?? []).map((l) => (l as unknown as { sites: { name: string } }).sites.name),
     grupos: memberships.data ?? [],
     aceptaciones: consents.data ?? [],
