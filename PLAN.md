@@ -137,14 +137,14 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 
 ## 8. Fases
 
-**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ✅ Fase 4 · ✅ Fase 5 · ⬜ Fase 6 · ⬜ Fase 7
+**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ✅ Fase 4 · ✅ Fase 5 · ✅ Fase 6 · ⬜ Fase 7
 
 1. **Base:** proyecto Next.js, esquema y RLS, login con Google y hook de lista blanca, roles, tema claro/oscuro, carga inicial (sedes, locations, admin, cabeza), importación del prototipo actual (mapa y zonas 1 a 6 de Castellana, Auditorio principal).
 2. **Manual (núcleo):** visor de mapas y pines, fichas de posición con fotos y YouTube, editor de pines, carga y reemplazo de mapas, posiciones por día y franja, flujos.
 3. **Personas y grupos:** agregar correos con rol (coordinador a su grupo, líder a su sede, cabeza y administrador a cualquiera), horarios y grupos, mover/cambiar rol/eliminar de la aplicación, líderes de sede, "Mi grupo". **Los correos son privados** (solo la persona y quien la administra).
 4. **Novedades:** noticias, cambios y avisos para toda la iglesia, una sede, una sede y un día, un día en todas las sedes, o un grupo; con enlaces, fijado, programación y vencimiento. Publican cabeza/admin (todo), líder (su sede) y coordinador (su grupo).
 5. **Rotación y servicio:** rotación por horario y sede, cancelaciones que consumen el turno, servicios especiales, calendario, programación en PDF, Excel o imagen, planeación de posiciones con borrador y publicación, historial por persona.
-6. **Chat IA.**
+6. **Chat IA:** búsqueda de texto completo en español bajo los permisos de la persona, modelo gratuito de OpenRouter (varios IDs con respaldo), enlaces a las fuentes, límite diario por persona.
 7. **Lanzamiento ampliado:** PWA instalable, ajustes, Supabase Pro, publicación a unas 2000 personas.
 
 ## 9. Lo que se necesita crear (cuenta del ministerio o del admin)

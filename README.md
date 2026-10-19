@@ -1,7 +1,7 @@
 # LogiAI
 
 Manual de logística y servicio de **El Lugar de Su Presencia**: mapas, posiciones, indicaciones, novedades y chat con IA.
-El plan completo está en [`PLAN.md`](PLAN.md). Estado actual: **Fases 1 a 5** completas (base, login, permisos, manual con mapas y posiciones, fotos, videos, flujos, personas y grupos, novedades, y rotación y servicio). Sigue el chat de IA.
+El plan completo está en [`PLAN.md`](PLAN.md). Estado actual: **Fases 1 a 6** completas (base, login, permisos, manual con mapas y posiciones, fotos, videos, flujos, personas y grupos, novedades, rotación y servicio, y el asistente de IA). Sigue el lanzamiento ampliado (PWA y publicación a unas 2000 personas).
 
 - **App:** Next.js 16 (App Router) en Vercel · **Datos, login y archivos:** Supabase
 - `legacy/` — prototipo original (HTML estático) y las imágenes de mapas de Castellana
@@ -97,9 +97,19 @@ Cabeza de ministerio y administrador ven todo.
 - **Planeación de posiciones** (coordinadores y supervisores del grupo que sirve, y el líder de la sede): se asignan personas a las posiciones del manual que aplican a ese día y franja. Una posición puede tener varias personas y una persona varias posiciones; cada posición admite una nota. **Los coordinadores coordinan el grupo y no ocupan posiciones**; las posiciones de supervisor son solo para supervisores. El **borrador** lo ven solo coordinadores y supervisores; al **publicar**, todo el grupo. Se puede copiar la planeación del servicio anterior como punto de partida. No hay confirmación de asistencia.
 - **Programación en archivo:** en lugar de (o además de) la planeación en la plataforma, se puede subir la programación como PDF, Excel o imagen (hasta 5 archivos de 10 MB por servicio). La ve todo el grupo con enlaces firmados.
 
+## Asistente (chat IA)
+Pantalla **Asistente** (menú superior), para cualquier persona con cuenta. Responde dudas con lo que está cargado: posiciones del manual, flujos y novedades vigentes.
+
+- **Solo con lo cargado:** en cada pregunta el servidor busca en español (texto completo de Postgres) y le pasa al modelo únicamente los fragmentos encontrados y unos pocos datos de la persona (rol, sede, grupo, próximo servicio y sus posiciones publicadas). Si no está en lo cargado, el asistente lo dice. Cita las fuentes con enlace (los enlaces los arma el servidor, no el modelo).
+- **Permisos:** la búsqueda corre **con la sesión de la persona**, así que solo encuentra lo que sus permisos (RLS) le dejan ver: una voluntaria de Castellana nunca recibe contenido de Nogal.
+- **Privacidad:** no se envían correos ni nombres al modelo. El contenido de las novedades se entrega como datos, con la instrucción de no obedecer órdenes escritas dentro.
+- **No usa herramientas:** los modelos gratuitos que rotan no las soportan de forma fiable. Tampoco lee el contenido de los archivos de programación (PDF, Excel, imágenes).
+- **Límite diario:** `CHAT_DAILY_LIMIT` preguntas por persona y por día (30 por defecto, hora de Colombia), porque los modelos gratuitos tienen cupo.
+- **Configuración (Vercel → Environment Variables, solo servidor):** `OPENROUTER_API_KEY` (la clave de openrouter.ai), `OPENROUTER_MODEL` (uno o varios IDs de modelos gratuitos separados por coma, se prueban en orden si uno falla o está saturado; por defecto `openrouter/free`) y, opcionalmente, `CHAT_DAILY_LIMIT`. Sin la clave, la pantalla avisa que el asistente no está configurado. Los IDs de modelos gratuitos cambian con el tiempo: revísalos en openrouter.ai/models (filtro «free») y ajusta la variable sin tocar el código.
+
 ## Actualizar una instalación existente
 Cada fase nueva trae migraciones. El orden seguro es:
 1. Publica primero el código nuevo (fusiona el pull request y espera el despliegue de Vercel).
 2. Luego aplica las migraciones: `npx supabase db push`.
 
-Notas por fase: la `20261019000001_people.sql` quita el correo de `profiles` y lo mueve a `profile_private`; la `20261020000001_announcements.sql` crea los anuncios (hasta aplicarla, el inicio muestra «No hay anuncios por ahora»); la `20261021000001_rotation.sql` crea la rotación, la planeación y el bucket privado `schedules` (hasta aplicarla, Mi servicio y Rotación no funcionan).
+Notas por fase: la `20261019000001_people.sql` quita el correo de `profiles` y lo mueve a `profile_private`; la `20261020000001_announcements.sql` crea los anuncios (hasta aplicarla, el inicio muestra «No hay anuncios por ahora»); la `20261021000001_rotation.sql` crea la rotación, la planeación y el bucket privado `schedules` (hasta aplicarla, Mi servicio y Rotación no funcionan); la `20261022000001_chat.sql` crea la búsqueda y el límite diario del asistente.
