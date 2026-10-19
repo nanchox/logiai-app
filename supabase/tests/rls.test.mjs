@@ -1055,3 +1055,66 @@ test('fase 6 · límite diario del asistente: se cuenta por persona y por día, 
   // Si la persona se elimina, se va su conteo
   assert.ok((await count('chat_usage')) >= 4);
 });
+
+// ───────────── Protección de datos personales ─────────────
+test('privacidad · constancia de aceptación: cada quien crea y ve solo la suya; nadie la cambia ni la borra', async () => {
+  const accept = (uid, who, v = '2026-10-19') => as(uid, () => db.query(`insert into public.consents (user_id, policy_version) values ($1, $2)`, [who, v]));
+  await accept(U.vol1, U.vol1);
+  await accept(U.vol1, U.vol1, '2027-01-01');                         // otra versión de los textos: otra constancia
+  await denied(() => accept(U.vol1, U.vol1), /duplicate|unique/i);
+  await denied(() => accept(U.vol1, U.coord1), /row-level security/);   // nadie acepta en nombre de otro
+  await denied(() => accept(U.admin, U.vol1, 'x'), /row-level security/);
+  await accept(U.coord1, U.coord1);
+  assert.equal(await as(U.vol1, () => count('consents')), 2);
+  assert.equal(await as(U.coord1, () => count('consents')), 1);
+  assert.equal(await as(U.admin, () => count('consents')), 0, 'ni siquiera el administrador ve la de otros');
+  assert.equal(await as(U.liderCas, () => count('consents')), 0);
+  await denied(() => as(U.vol1, () => db.query(`update public.consents set accepted_at = now() - interval '1 year'`)), /permission denied/);
+  await denied(() => as(U.vol1, () => db.query(`delete from public.consents`)), /permission denied/);
+  await denied(() => as(U.vol1, () => db.query(`insert into public.consents (user_id, policy_version) values ($1, '')`, [U.vol1])), /check/);
+  await db.exec(`set role anon`);
+  try { await denied(() => db.query(`select * from public.consents`), /permission denied/); } finally { await db.exec(`reset role`); }
+});
+
+test('privacidad · darse de baja: borra la cuenta y sus datos, deja las novedades sin su nombre y no puede volver sin nueva invitación', async () => {
+  await as(U.admin, () => db.query(`insert into public.invitations (email, leader_site_ids) values ('lider.baja@x.com', $1)`, [[U.sCamp]]));
+  await signup('liderBaja', 'lider.baja@x.com');
+  const me = U.liderBaja;
+  await as(me, () => db.query(`insert into public.announcements (title, body, site_id) values ('Aviso de quien se va', 'texto', $1)`, [U.sCamp]));
+  await as(me, () => db.query(`insert into public.consents (user_id, policy_version) values ($1, 'v1')`, [me]));
+  await as(me, () => db.query(`select public.chat_consume(5)`));
+  const before = await one(`select author_name, author_role from public.announcements where title = 'Aviso de quien se va'`);
+  assert.ok(before.author_name && before.author_role, 'la novedad nace con el nombre y el rol de su autor');
+
+  await as(me, () => db.query(`select public.delete_my_account()`));
+  assert.equal(await count('profiles', `user_id = '${me}'`), 0);
+  assert.equal(await count('profile_private', `user_id = '${me}'`), 0);
+  assert.equal(await count('site_leaders', `user_id = '${me}'`), 0);
+  assert.equal(await count('consents', `user_id = '${me}'`), 0);
+  assert.equal(await count('chat_usage', `user_id = '${me}'`), 0);
+  assert.equal(await count('invitations', `email = 'lider.baja@x.com'`), 0, 'sin invitación no puede volver a entrar');
+  assert.equal((await one(`select count(*)::int n from auth.users where id = $1`, [me])).n, 0);
+  await denied(() => signup('liderBaja2', 'lider.baja@x.com'), /no autorizado/i);
+  const after = await one(`select author_id, author_name, author_role, title from public.announcements where title = 'Aviso de quien se va'`);
+  assert.deepEqual(after, { author_id: null, author_name: null, author_role: null, title: 'Aviso de quien se va' }, 'la novedad queda, sin datos de la persona');
+});
+
+test('privacidad · baja de un integrante: se va con su grupo y sus asignaciones pasadas; el administrador y la cabeza no se dan de baja solos', async () => {
+  await db.query(`insert into public.chat_usage (user_id, day, n) values ($1, current_date, 2)`, [U.volDom]);
+  await as(U.volDom, () => db.query(`select public.delete_my_account()`));
+  assert.equal(await count('memberships', `user_id = '${U.volDom}'`), 0);
+  assert.equal(await count('chat_usage', `user_id = '${U.volDom}'`), 0);
+  await denied(() => as(U.admin, () => db.query(`select public.delete_my_account()`)), /no pueden eliminarse a sí mismos/);
+  await denied(() => as(U.cabeza, () => db.query(`select public.delete_my_account()`)), /no pueden eliminarse a sí mismos/);
+  assert.equal(await count('profiles', `user_id = '${U.admin}'`), 1);
+  await db.exec(`set role anon`);
+  try { await denied(() => db.query(`select public.delete_my_account()`), /permission denied/); } finally { await db.exec(`reset role`); }
+  await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub', '', false);`);
+  try { await denied(() => db.query(`select public.delete_my_account()`), /Inicia sesión/); } finally { await db.exec(`reset role`); }   // sesión sin persona: no hace nada en silencio
+  // Quien elimina a otra persona (delete_person) también deja las novedades sin su nombre
+  await as(U.admin, () => db.query(`insert into public.invitations (email, leader_site_ids) values ('lider.baja3@x.com', $1)`, [[U.sCamp]]));
+  await signup('liderBaja3', 'lider.baja3@x.com');
+  await as(U.liderBaja3, () => db.query(`insert into public.announcements (title, body, site_id) values ('Aviso dos', '', $1)`, [U.sCamp]));
+  await as(U.admin, () => db.query(`select public.delete_person($1)`, [U.liderBaja3]));
+  assert.deepEqual(await one(`select author_name, author_role from public.announcements where title = 'Aviso dos'`), { author_name: null, author_role: null });
+});

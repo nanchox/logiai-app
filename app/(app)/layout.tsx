@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { requireUser } from "@/lib/auth";
 
@@ -6,6 +7,7 @@ const navLink = "shrink-0 whitespace-nowrap rounded-lg px-3 py-2 !text-on-header
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
+  if (!user.privacyAccepted) redirect("/aceptar");
 
   return (
     <>
@@ -21,12 +23,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link href="/asistente" className={navLink}>Asistente</Link>
             {user.membership && <Link href="/grupo" className={navLink}>Mi grupo</Link>}
             {user.canManagePeople && <Link href="/personas" className={navLink}>Personas</Link>}
+            <Link href="/perfil" className={`${navLink} sm:hidden`}>Perfil</Link>
           </nav>
           <div className="order-2 ml-auto flex items-center gap-3 sm:order-3 sm:ml-0">
-            <div className="hidden text-right leading-tight sm:block">
+            <Link href="/perfil" aria-label="Mi perfil" className="hidden text-right leading-tight !text-on-header no-underline hover:opacity-90 sm:block">
               <p className="text-sm font-semibold">{user.name}</p>
               <p className="text-xs opacity-80">{user.roleLabel}</p>
-            </div>
+            </Link>
             <ThemeToggle />
             <form action="/auth/signout" method="post">
               <button type="submit" className="rounded-lg border border-white/30 px-3 py-2 text-sm font-semibold hover:bg-white/10">Salir</button>

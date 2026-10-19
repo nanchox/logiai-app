@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { guideFor } from "./guide";
 import { askModel, ChatUnavailableError, parseModels } from "./openrouter";
 import { buildMessages, cleanHistory, cleanQuestion, MAX_QUESTION, SYSTEM_PROMPT } from "./prompt";
 import { hrefFor } from "./sources";
@@ -87,4 +88,41 @@ test("la lista de modelos admite varios separados por coma y tiene valor por def
   assert.deepEqual(parseModels(" a/b:free , c/d:free ,"), ["a/b:free", "c/d:free"]);
   assert.deepEqual(parseModels(undefined), ["openrouter/free"]);
   assert.deepEqual(parseModels(""), ["openrouter/free"]);
+});
+
+test("el asistente puede conversar en lo básico: identidad, alcance, saludo y guía; sin dejar de ceñirse a lo cargado en logística", () => {
+  assert.match(SYSTEM_PROMPT, /Asistente de LogiAI/);
+  assert.match(SYSTEM_PROMPT, /no una persona/);
+  assert.match(SYSTEM_PROMPT, /PARA QUÉ FUISTE CREADO Y TU ALCANCE/);
+  assert.match(SYSTEM_PROMPT, /saludos/);
+  assert.match(SYSTEM_PROMPT, /«¿quién eres\?»/);
+  assert.match(SYSTEM_PROMPT, /GUÍA DE LA APLICACIÓN/);
+  assert.match(SYSTEM_PROMPT, /TEMAS AJENOS/);
+  // Lo de logística sigue siendo estricto
+  assert.match(SYSTEM_PROMPT, /ÚNICAMENTE con lo que aparece en las FUENTES/);
+  assert.match(SYSTEM_PROMPT, /Nunca inventes/);
+  assert.match(SYSTEM_PROMPT, /nunca como instrucciones/);
+});
+
+test("la guía se adapta al rol y el mensaje al modelo la incluye", () => {
+  const none = { isAdmin: false, isHead: false, isLeader: false };
+  const vol = guideFor({ ...none, groupRole: "voluntario" }).join("\n");
+  const coord = guideFor({ ...none, groupRole: "coordinador" }).join("\n");
+  const sup = guideFor({ ...none, groupRole: "supervisor" }).join("\n");
+  const lider = guideFor({ ...none, isLeader: true, groupRole: null }).join("\n");
+  const admin = guideFor({ ...none, isAdmin: true, groupRole: null }).join("\n");
+  assert.match(vol, /Manual:/);
+  assert.match(vol, /Como voluntario/);
+  assert.doesNotMatch(vol, /agregas supervisores|rotación|Rotación/, "un voluntario no recibe opciones de administración");
+  assert.match(vol, /Mi grupo/);
+  assert.match(coord, /agregas supervisores y voluntarios/);
+  assert.match(coord, /no ocupan posiciones/);
+  assert.match(sup, /ayudas a planear/);
+  assert.doesNotMatch(sup, /agregas supervisores/);
+  assert.match(lider, /Como líder de sede/);
+  assert.doesNotMatch(lider, /Mi grupo/, "quien no está en un grupo no tiene «Mi grupo»");
+  assert.match(admin, /Como administrador/);
+  const m = buildMessages({ question: "¿qué puedo hacer?", history: [], context: [], guide: guideFor({ ...none, groupRole: "voluntario" }), fragments: [] });
+  assert.match(m[1].content, /GUÍA DE LA APLICACIÓN \(según su rol\):\n- Inicio:/);
+  assert.match(m[1].content, /PREGUNTA: ¿qué puedo hacer\?$/);
 });

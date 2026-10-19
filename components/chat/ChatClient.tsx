@@ -7,7 +7,7 @@ import { btnPrimary, ErrorText, input } from "@/components/manual/ui";
 type Source = { n: number; title: string; href: string };
 type Message = { role: "user" | "assistant"; content: string; sources?: Source[] };
 
-const SUGGESTIONS = ["¿Qué hago cuando se llena el auditorio?", "¿Cuándo me toca servir y en qué posición?", "¿Qué novedades hay para mi sede?"];
+const SUGGESTIONS = ["¿Qué puedo hacer aquí?", "¿Cuándo me toca servir y en qué posición?", "¿Qué hago cuando se llena el auditorio?", "¿Qué novedades hay para mi sede?"];
 
 export function ChatClient({ configured, limit }: { configured: boolean; limit: number }) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -46,7 +46,7 @@ export function ChatClient({ configured, limit }: { configured: boolean; limit: 
       <div className="min-h-48 space-y-3" aria-live="polite" aria-label="Conversación">
         {messages.length === 0 && (
           <div className="space-y-2">
-            <p className="text-muted">Pregúntame por el manual, los flujos, las novedades o tu servicio.</p>
+            <p className="text-muted">¡Hola! Soy el Asistente de LogiAI. Pregúntame por el manual, los flujos, las novedades o tu servicio, o cómo usar la aplicación.</p>
             <div className="flex flex-wrap gap-2">
               {SUGGESTIONS.map((s) => <button key={s} type="button" className="rounded-full border border-line bg-surface px-3 py-1.5 text-sm hover:border-primary" onClick={() => ask(s)}>{s}</button>)}
             </div>

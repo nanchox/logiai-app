@@ -147,6 +147,9 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 6. **Chat IA:** búsqueda de texto completo en español bajo los permisos de la persona, modelo gratuito de OpenRouter (varios IDs con respaldo), enlaces a las fuentes, límite diario por persona.
 7. **Lanzamiento ampliado:** PWA instalable, ajustes, Supabase Pro, publicación a unas 2000 personas.
 
+## 8.1 Protección de datos (Ley 1581 de 2012)
+Aceptación obligatoria de la política de datos y los términos al primer ingreso (con constancia por versión), página Perfil (ver, rectificar, descargar y eliminar la cuenta) y política y términos públicos. Detalle en el README.
+
 ## 9. Lo que se necesita crear (cuenta del ministerio o del admin)
 1. Proyecto en Supabase. Se toman las variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY`.
 2. Cliente OAuth en Google Cloud (pantalla de consentimiento y redirect URI de Supabase), configurado en Supabase → Auth → Google.

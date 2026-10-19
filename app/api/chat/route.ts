@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { personContext } from "@/lib/chat/context";
+import { type GuideUser, guideFor } from "@/lib/chat/guide";
 import { askModel, ChatUnavailableError, parseModels } from "@/lib/chat/openrouter";
 import { buildMessages, cleanHistory, cleanQuestion, MAX_QUESTION } from "@/lib/chat/prompt";
 import { type SearchRow, toFragments } from "@/lib/chat/sources";
@@ -13,6 +14,7 @@ const fail = (status: number, error: string) => NextResponse.json({ error }, { s
 export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return fail(401, "Inicia sesión para usar el asistente.");
+  if (!user.privacyAccepted) return fail(403, "Acepta la política de datos y los términos para usar el asistente.");
 
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return fail(503, "El asistente todavía no está configurado.");
@@ -44,7 +46,7 @@ export async function POST(req: Request) {
       apiKey,
       baseUrl: process.env.OPENROUTER_BASE_URL,
       models: parseModels(process.env.OPENROUTER_MODEL),
-      messages: buildMessages({ question, history, context, fragments }),
+      messages: buildMessages({ question, history, context, fragments, guide: guideFor({ isAdmin: user.isAdmin, isHead: user.isHead, isLeader: user.leaderSites.length > 0, groupRole: (user.membership?.role as GuideUser["groupRole"]) ?? null }) }),
       referer: new URL(req.url).origin,
     });
     return NextResponse.json({
