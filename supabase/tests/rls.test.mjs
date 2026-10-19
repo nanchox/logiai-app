@@ -981,3 +981,77 @@ test('fase 5 · el grupo que sirve ve su servicio; quien no, no; anon nada; fech
   assert.equal(await count('service_assignments', `event_id in (select id from public.service_events where slot_id = '${slotSab}')`), 0, 'sin grupo no queda planeación');
   assert.equal(await count('service_plans', `event_id in (select id from public.service_events where slot_id = '${slotSab}')`), 0);
 });
+
+// ───────────── Fase 6 · Asistente ─────────────
+const hits = (uid, q) => as(uid, async () => (await rows(`select kind, title, site_slug from public.search_manual($1)`, [q])));
+
+test('fase 6 · búsqueda: encuentra posiciones, flujos y novedades vigentes, solo de lo que la persona puede ver', async () => {
+  // Datos propios de cada sede (la búsqueda debe respetar RLS)
+  await as(U.admin, async () => {
+    const locCas = (await one(`select l.id from public.locations l where l.site_id = $1 limit 1`, [U.sCas])).id;
+    const locNog = (await one(`select l.id from public.locations l where l.site_id = $1 limit 1`, [U.sNogal])).id;
+    await db.query(`insert into public.positions (location_id, code, name, kind, description, uses_radio) values ($1, 'ZZ1', 'Puerta de parqueadero', 'voluntario', 'Orienta los carros hacia el parqueadero lateral', true)`, [locCas]);
+    await db.query(`insert into public.positions (location_id, code, name, kind, description) values ($1, 'ZZ2', 'Puerta de bicicletas', 'voluntario', 'Recibe bicicletas en el bicicletero')`, [locNog]);
+    await db.query(`insert into public.positions (location_id, code, name, kind, description, is_active) values ($1, 'ZZ3', 'Parqueadero oculto', 'voluntario', 'parqueadero', false)`, [locCas]);
+    const f = (await one(`insert into public.flows (site_id, name, description) values ($1, 'Auditorio lleno', 'Qué hacer cuando se llena el auditorio principal') returning id`, [U.sCas])).id;
+    await db.query(`insert into public.flow_steps (flow_id, step_order, title, instructions) values ($1, 1, 'Cerrar la entrada', 'Avisa por radio y cierra las puertas principales')`, [f]);
+    await db.query(`insert into public.announcements (title, body) values ('Cambio de horario del parqueadero', 'Desde el domingo abre más temprano')`);
+    await db.query(`insert into public.announcements (title, body, ends_at, starts_at) values ('Parqueadero vencido', 'ya pasó', now() - interval '1 day', now() - interval '3 days')`);
+  });
+  const titles = (r) => r.map((x) => x.title);
+
+  const vol = await hits(U.vol1, '¿Dónde dejo los carros en el parqueadero?');
+  assert.ok(titles(vol).some((t) => t.startsWith('ZZ1 · Puerta de parqueadero')), 'encuentra la posición por su descripción');
+  assert.ok(titles(vol).includes('Cambio de horario del parqueadero'), 'y la novedad vigente');
+  assert.ok(!titles(vol).some((t) => t.includes('vencido')), 'no la vencida');
+  assert.ok(!titles(await hits(U.admin, 'parqueadero')).some((t) => t.includes('vencido')), 'ni siquiera quien administra novedades la ve en el asistente');
+  assert.ok(!titles(vol).some((t) => t.startsWith('ZZ3')), 'ni las posiciones ocultas');
+  assert.ok(!titles(vol).some((t) => t.startsWith('ZZ2')), 'ni lo de otra sede');
+  // Una pregunta en lenguaje natural: varias palabras, con acentos y signos
+  const flow = await hits(U.vol1, 'Qué hago cuando se llena el auditorio?');
+  assert.equal(flow[0].kind, 'flujo');
+  assert.ok(flow[0].title.startsWith('Auditorio lleno'));
+  const step = await as(U.vol1, () => one(`select body from public.search_manual('cerrar entrada puertas') where kind = 'flujo'`));
+  assert.match(step.body, /1\. Cerrar la entrada: Avisa por radio/);
+  // Otra sede ve lo suyo
+  const nog = await hits(U.liderNogal2, 'bicicletas');
+  assert.deepEqual(nog.filter((x) => x.kind === 'posicion').map((x) => x.title.slice(0, 3)), ['ZZ2']);
+  assert.ok(!(await hits(U.liderNogal2, 'parqueadero')).some((x) => x.kind === 'posicion'), 'el líder de Nogal no encuentra posiciones de Castellana');
+  // Novedades de un grupo solo para ese grupo
+  await as(U.coord1, () => db.query(`insert into public.announcements (title, body, group_id) values ('Reunión del grupo uno', 'Traer chaleco naranja', $1)`, [U.gCas1]));
+  assert.ok((await hits(U.vol1, 'chaleco naranja')).some((x) => x.kind === 'novedad'));
+  assert.equal((await hits(U.volSuba, 'chaleco naranja')).length, 0);
+  // Admin ve todo
+  assert.ok((await hits(U.admin, 'bicicletas')).length >= 1);
+  // Consultas vacías o de pura puntuación no devuelven nada ni fallan
+  for (const q of ['', '   ', '?!', 'de la el', null]) assert.equal((await hits(U.vol1, q)).length, 0);
+  // Una consulta con caracteres de sintaxis de tsquery no la rompe
+  await hits(U.vol1, `'a' & (b | !c) :* <-> \\ ;--`);
+  // El límite
+  assert.ok((await as(U.admin, () => rows(`select * from public.search_manual('puerta posición parqueadero bicicletas', 2)`))).length <= 2);
+  await denied(async () => { await db.exec(`set role anon`); try { await db.query(`select * from public.search_manual('x')`); } finally { await db.exec(`reset role`); } }, /permission denied/);
+});
+
+test('fase 6 · límite diario del asistente: se cuenta por persona y por día, y no se puede manipular', async () => {
+  const use = (uid, limit) => as(uid, async () => (await one(`select public.chat_consume($1) r`, [limit])).r);
+  assert.deepEqual(await use(U.vol1, 3), { allowed: true, used: 1, limit: 3 });
+  assert.deepEqual(await use(U.vol1, 3), { allowed: true, used: 2, limit: 3 });
+  assert.deepEqual(await use(U.vol1, 3), { allowed: true, used: 3, limit: 3 });
+  assert.deepEqual(await use(U.vol1, 3), { allowed: false, used: 3, limit: 3 }, 'al llegar al límite no cuenta más');
+  assert.deepEqual(await use(U.vol1, 3), { allowed: false, used: 3, limit: 3 });
+  assert.deepEqual(await use(U.coord1, 3), { allowed: true, used: 1, limit: 3 }, 'cada persona tiene el suyo');
+  // Límites absurdos se acotan
+  assert.equal((await use(U.sup1, 0)).limit, 1);
+  assert.equal((await use(U.volSuba, 100000)).limit, 500);
+  // Nadie lee ni escribe la tabla directamente; anon no ejecuta la función
+  await denied(() => as(U.vol1, () => db.query(`select * from public.chat_usage`)), /permission denied/);
+  await denied(() => as(U.vol1, () => db.query(`update public.chat_usage set n = 0`)), /permission denied/);
+  await denied(() => as(U.vol1, () => db.query(`delete from public.chat_usage`)), /permission denied/);
+  await db.exec(`set role anon`);
+  try { await denied(() => db.query(`select public.chat_consume(5)`), /permission denied/); } finally { await db.exec(`reset role`); }
+  // Cambia el día: vuelve a empezar
+  await db.query(`update public.chat_usage set day = day - 1 where user_id = $1`, [U.vol1]);
+  assert.equal((await use(U.vol1, 3)).used, 1);
+  // Si la persona se elimina, se va su conteo
+  assert.ok((await count('chat_usage')) >= 4);
+});
