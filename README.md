@@ -120,7 +120,9 @@ Menú **Conteos** (líder de sede, cabeza, administrador, coordinadores y superv
 - Los totales no son datos personales; si la persona que contó se elimina, se conservan sin su nombre.
 
 ## Asistente (chat IA)
-Pantalla **Asistente** (menú superior), para cualquier persona con cuenta. Responde dudas con lo que está cargado: posiciones del manual, flujos y novedades vigentes.
+**Asistente** para cualquier persona con cuenta, siempre a mano en todas las pantallas: **en el celular**, una barra inferior con el cuadro de preguntas activo que, al escribir, se despliega en una hoja con la conversación (se minimiza con ⌄, tocando fuera o al abrir una fuente); **en el computador**, un panel lateral que se expande y se colapsa (botón flotante, botón «Asistente» del menú o Esc) y que **empuja el contenido en vez de taparlo**. La respuesta aparece en el mismo chat, sin cambiar de pantalla, y **la conversación se conserva al navegar**; «Pantalla completa» abre `/asistente` con esa misma conversación. No se guarda en el navegador ni en el servidor: al recargar, empieza de nuevo.
+
+Responde dudas con lo que está cargado: posiciones del manual, flujos y novedades vigentes.
 
 - **Conversa en lo básico:** saluda, dice quién es (el Asistente de LogiAI, una IA), para qué fue creado y cuál es su alcance, y guía con «¿qué puedo hacer?» usando una guía de la aplicación **adaptada al rol** de la persona (un voluntario no recibe opciones de administración). Fuera de su alcance (temas ajenos a la aplicación) lo dice con amabilidad. Esas respuestas no necesitan fuentes.
 - **Solo con lo cargado (datos de logística):** en cada pregunta el servidor busca en español (texto completo de Postgres) y le pasa al modelo únicamente los fragmentos encontrados y unos pocos datos de la persona (rol, sede, grupo, próximo servicio y sus posiciones publicadas). Si no está en lo cargado, el asistente lo dice. Cita las fuentes con enlace (los enlaces los arma el servidor, no el modelo).
