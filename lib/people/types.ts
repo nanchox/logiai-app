@@ -16,7 +16,6 @@ export type GroupItem = {
 export type MemberItem = {
   userId: string;
   name: string;
-  avatarUrl: string | null;
   /** Solo lo ve quien administra a la persona; para los demás es null. */
   email: string | null;
   role: GroupRole;

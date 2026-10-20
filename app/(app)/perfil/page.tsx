@@ -27,8 +27,8 @@ export default async function ProfilePage() {
 
       {user.isAdmin && legal.incomplete && (
         <p role="status" className="rounded-2xl border border-danger/60 bg-danger/10 p-4 text-sm">
-          <strong>Falta configurar los datos legales.</strong> La política de datos debe indicar la identificación y el correo de contacto del responsable (variables <code>LEGAL_ID</code>,{" "}
-          <code>LEGAL_ADDRESS</code> y <code>LEGAL_EMAIL</code> en Vercel).
+          <strong>Falta configurar los datos legales.</strong> La política de datos debe indicar quién administra la aplicación y un correo de contacto (variables <code>LEGAL_NAME</code>,{" "}
+          <code>LEGAL_CITY</code> y <code>LEGAL_EMAIL</code> en Vercel).
         </p>
       )}
 
