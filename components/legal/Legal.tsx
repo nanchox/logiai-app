@@ -39,6 +39,7 @@ export function PrivacyPolicy() {
         <li>Tu <strong>nombre</strong> y tu <strong>correo</strong> de Google (no recibimos tu contraseña ni guardamos tu foto).</li>
         <li>Tu <strong>sede, grupo y rol</strong> en el servicio, y las <strong>posiciones</strong> que se te asignan.</li>
         <li>La fecha en que aceptaste esta política y cuántas preguntas haces al asistente cada día (para el límite diario).</li>
+        <li><strong>Solo si activas los avisos al teléfono</strong> (es opcional): un identificador técnico de tu dispositivo (la dirección que da tu navegador para enviarte avisos) y qué avisos quieres recibir.</li>
         <li><strong>No guardamos el contenido de tus conversaciones con el asistente.</strong></li>
       </ul>
 
@@ -62,7 +63,7 @@ export function PrivacyPolicy() {
         <li>
           Para funcionar usamos proveedores que pueden tener sus servidores fuera de Colombia: <strong>Supabase</strong> (base de datos e inicio de sesión), <strong>Vercel</strong> (alojamiento),{" "}
           <strong>Google</strong> (inicio de sesión) y <strong>OpenRouter</strong> con su modelo de inteligencia artificial (reciben el texto de tu pregunta al asistente, tu rol, sede, grupo y posiciones,{" "}
-          <strong>nunca tu nombre ni tu correo</strong>; no escribas datos personales en el asistente). Al aceptar autorizas esta transmisión y transferencia, solo para prestarte el servicio.
+          <strong>nunca tu nombre ni tu correo</strong>; no escribas datos personales en el asistente). Los avisos opcionales los entrega el servicio de tu navegador o teléfono (Google, Apple o Mozilla): reciben el texto del aviso («piden apoyo en tu sede», «faltan los conteos»), que <strong>no incluye nombres ni correos</strong>. Al aceptar autorizas esta transmisión y transferencia, solo para prestarte el servicio.
         </li>
       </ul>
 
@@ -76,7 +77,7 @@ export function PrivacyPolicy() {
 
       <h2 className={h2}>7. Qué pasa si eliminas tu cuenta</h2>
       <p>
-        Se borran de inmediato tu nombre, tu correo, tu pertenencia a grupos, tus asignaciones, tu constancia de aceptación y tu invitación. Para volver, tu coordinador o líder tendría que
+        Se borran de inmediato tu nombre, tu correo, tu pertenencia a grupos, tus asignaciones, tus dispositivos de avisos, tu constancia de aceptación y tu invitación. Para volver, tu coordinador o líder tendría que
         invitarte de nuevo. Las novedades que publicaste quedan sin tu nombre. Los proveedores pueden conservar copias de seguridad por un tiempo limitado, solo para recuperación ante fallos.
       </p>
 
@@ -115,15 +116,18 @@ export function Terms() {
         archivos de programación, no hace acciones por ti y tiene un límite diario de preguntas. No escribas en él datos personales.
       </p>
 
-      <h2 className={h2}>4. Disponibilidad</h2>
+      <h2 className={h2}>4. Avisos al teléfono</h2>
+      <p>Son opcionales: solo los recibes si los activas en Perfil, puedes elegir cuáles y desactivarlos cuando quieras. Solo avisan que hay algo por hacer.</p>
+
+      <h2 className={h2}>5. Disponibilidad</h2>
       <p>Procuramos que funcione siempre, pero puede haber interrupciones. La planeación es una ayuda de organización: ante un cambio de última hora, manda la indicación de tu coordinador o líder.</p>
 
-      <h2 className={h2}>5. Baja</h2>
+      <h2 className={h2}>6. Baja</h2>
       <p>
         Puedes <strong>eliminar tu cuenta cuando quieras</strong> desde Perfil. El ministerio puede retirar el acceso a quien incumpla estos términos o deje de servir en el equipo.
       </p>
 
-      <h2 className={h2}>6. Cambios y contacto</h2>
+      <h2 className={h2}>7. Cambios y contacto</h2>
       <p>Si estos términos cambian de forma importante, te pediremos aceptarlos de nuevo. Se rigen por las leyes de Colombia. Para cualquier duda escribe a {c.email}.</p>
     </>
   );

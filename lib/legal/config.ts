@@ -1,8 +1,8 @@
 // Quién administra LogiAI y cómo contactarlo. Los textos legales citan estos valores; se configuran con variables de entorno
 // (solo servidor). Para una persona natural bastan tres datos: nombre, ciudad y correo de contacto. Si falta alguno, los textos lo
 // muestran como pendiente y el administrador ve un aviso en su Perfil.
-export const POLICY_VERSION = "2026-10-19";
-export const POLICY_DATE = "19 de octubre de 2026";
+export const POLICY_VERSION = "2026-10-20";
+export const POLICY_DATE = "20 de octubre de 2026";
 
 const PENDING = "(pendiente de configurar)";
 

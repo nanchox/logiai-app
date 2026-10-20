@@ -2,7 +2,9 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseConfig } from "@/lib/supabase/env";
 
-const PUBLIC_PATHS = ["/login", "/auth", "/politica", "/terminos"];
+// Públicas: el ingreso, los textos legales y lo que el navegador pide sin sesión para instalar la aplicación (manifiesto, iconos,
+// service worker y pantalla de sin conexión). /api/cron las protege su propio secreto.
+const PUBLIC_PATHS = ["/login", "/auth", "/politica", "/terminos", "/manifest.webmanifest", "/sw.js", "/offline", "/icons", "/api/cron"];
 
 // Refresca la sesión de Supabase en cada petición y envía a /login a quien no la tenga.
 // Es solo una comprobación optimista: los permisos reales los aplica RLS en la base de datos.

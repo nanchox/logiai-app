@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { InstallApp, PushSettings } from "@/components/profile/AppSettings";
 import { DeleteAccount } from "@/components/profile/DeleteAccount";
 import { DownloadData, RenameForm } from "@/components/profile/ProfileActions";
 import { requireUser } from "@/lib/auth";
@@ -40,6 +41,15 @@ export default async function ProfilePage() {
           <dt className="font-bold text-muted">Sede y grupo</dt><dd>{scope}</dd>
         </dl>
         <RenameForm userId={user.id} name={user.name} />
+      </section>
+
+      <section aria-label="Aplicación y avisos" className={card}>
+        <h2 className="text-lg font-extrabold">Aplicación y avisos</h2>
+        <InstallApp />
+        <div className="border-t border-line pt-3">
+          <h3 className="mb-2 text-sm font-bold uppercase tracking-wider text-muted">Avisos al teléfono</h3>
+          <PushSettings vapidKey={process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim() ?? ""} userId={user.id} isPlanner={!!user.membership && ["coordinador", "supervisor"].includes(user.membership.role)} />
+        </div>
       </section>
 
       <section aria-label="Privacidad" className={card}>

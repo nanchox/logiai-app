@@ -358,7 +358,12 @@ test('endurecimiento · ninguna función de public es ejecutable por anon o PUBL
   for (const f of fns) {
     assert.equal(f.anon_ok, false, `${f.proname}: la ejecuta anon`);
     assert.equal(f.public_ok, false, `${f.proname}: la ejecuta PUBLIC`);
-    if (f.proname === 'hook_before_user_created' || f.is_trigger) assert.equal(f.auth_ok, false, `${f.proname}: no debe ejecutarla authenticated`);
+    // Funciones que solo ejecuta el servidor (service_role): ninguna persona, ni con sesión.
+    const SERVER_ONLY = ['support_request_audience', 'pending_counts_audience', 'claim_notification'];
+    if (SERVER_ONLY.includes(f.proname)) {
+      assert.equal(f.auth_ok, false, `${f.proname}: solo el servidor la ejecuta`);
+      assert.equal((await one(`select has_function_privilege('service_role', $1::regproc, 'execute') ok`, [f.proname])).ok, true, `${f.proname}: el servidor sí`);
+    } else if (f.proname === 'hook_before_user_created' || f.is_trigger) assert.equal(f.auth_ok, false, `${f.proname}: no debe ejecutarla authenticated`);
     else assert.equal(f.auth_ok, true, `${f.proname}: authenticated la necesita para las políticas RLS`);
     assert.ok(Number(f.sp) >= 1, `${f.proname}: sin search_path fijo`);
   }
@@ -1538,4 +1543,108 @@ test('fase 8 · quién ve los totales y el historial de cambios; la capacidad no
   await saveCounts(U.sR1, U.evToday, [{ location_id: U.locB, total: 50 }]);
   await as(U.sR1, () => db.query(`select public.delete_my_account()`));
   assert.ok(await count('service_counts', `counted_by is null`) >= 1, 'los totales no son datos personales: se conservan sin nombre');
+});
+
+// ───────────── Fase 9 · Avisos al teléfono ─────────────
+const asServer = async (fn) => { await db.exec(`set role service_role`); try { return await fn(); } finally { await db.exec(`reset role`); } };
+const sub = (uid, ep, extra = {}) => rpc(uid, `select public.save_push_subscription($1, $2, $3)`, [ep, extra.p256dh ?? 'BKey', extra.auth ?? 'authKey']);
+
+test('fase 9 · dispositivos: cada quien ve y quita los suyos; un dispositivo pasa a quien inicia sesión; máximo 10', async () => {
+  await sub(U.vR4, 'https://push.example/dev-a');
+  assert.equal(await as(U.vR4, () => count('push_subscriptions')), 1);
+  assert.equal(await as(U.vR5, () => count('push_subscriptions')), 0, 'nadie ve los dispositivos de otro');
+  assert.equal(await as(U.admin, () => count('push_subscriptions')), 0, 'ni el administrador');
+  // El mismo navegador usado por otra persona: el aviso pasa a ella
+  await sub(U.vR5, 'https://push.example/dev-a', { auth: 'otra' });
+  assert.equal(await as(U.vR4, () => count('push_subscriptions')), 0);
+  assert.equal(await as(U.vR5, () => count('push_subscriptions')), 1);
+  assert.equal((await one(`select auth from public.push_subscriptions where endpoint = 'https://push.example/dev-a'`)).auth, 'otra');
+  // Validaciones y permisos
+  await denied(() => sub(U.vR4, 'http://sin-https.example/x'), /check/);
+  await denied(() => sub(U.vR4, 'https://push.example/' + 'x'.repeat(1001)), /check/);
+  await denied(() => sub(U.vR4, 'https://push.example/ok', { p256dh: '' }), /check/);
+  await denied(() => as(U.vR4, () => db.query(`insert into public.push_subscriptions (user_id, endpoint, p256dh, auth) values ($1, 'https://x.example/1', 'a', 'b')`, [U.vR4])), /permission denied/);
+  await denied(() => as(U.vR4, () => db.query(`update public.push_subscriptions set user_id = $1`, [U.vR4])), /permission denied/);
+  await db.exec(`set role anon`);
+  try { await denied(() => db.query(`select public.save_push_subscription('https://a.example/1', 'a', 'b')`), /permission denied/); } finally { await db.exec(`reset role`); }
+  // Quitar: solo los propios
+  await rpc(U.vR4, `select public.remove_push_subscription('https://push.example/dev-a')`);
+  assert.equal(await count('push_subscriptions', `endpoint = 'https://push.example/dev-a'`), 1, 'no quita el de otra persona');
+  assert.equal(await as(U.vR4, async () => (await db.query(`delete from public.push_subscriptions where endpoint = 'https://push.example/dev-a'`)).affectedRows), 0, 'ni borrándolo directamente');
+  assert.equal(await as(U.vR5, async () => (await db.query(`delete from public.push_subscriptions where endpoint = 'https://push.example/dev-a'`)).affectedRows), 1, 'cada quien quita el suyo');
+  // Máximo 10 por persona: se conservan los más recientes
+  for (let i = 1; i <= 12; i++) { await sub(U.vR4, `https://push.example/m${i}`); await db.query(`update public.push_subscriptions set created_at = now() - ($2 || ' seconds')::interval where endpoint = $1`, [`https://push.example/m${i}`, String(20 - i)]); }
+  await sub(U.vR4, 'https://push.example/m13');
+  const keep = (await rows(`select endpoint from public.push_subscriptions where user_id = $1`, [U.vR4])).map((r) => r.endpoint);
+  assert.equal(keep.length, 10);
+  assert.ok(keep.includes('https://push.example/m13') && !keep.includes('https://push.example/m1'), 'se van los más antiguos');
+  await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example/m%'`);
+});
+
+test('fase 9 · preferencias de avisos: cada quien las suyas', async () => {
+  await as(U.vR5, () => db.query(`insert into public.notification_prefs (user_id, support_requests) values ($1, false)`, [U.vR5]));
+  assert.deepEqual(await as(U.vR5, () => one(`select support_requests, pending_counts from public.notification_prefs`)), { support_requests: false, pending_counts: true });
+  await as(U.vR5, () => db.query(`update public.notification_prefs set pending_counts = false where user_id = $1`, [U.vR5]));
+  await denied(() => as(U.vR4, () => db.query(`insert into public.notification_prefs (user_id) values ($1)`, [U.vR5])), /row-level security/);
+  assert.equal(await as(U.vR4, () => count('notification_prefs')), 0, 'nadie ve las de otra persona');
+  assert.equal(await as(U.vR4, async () => (await db.query(`update public.notification_prefs set support_requests = true`)).affectedRows), 0);
+  assert.equal(await as(U.admin, () => count('notification_prefs')), 0);
+  await denied(() => as(U.vR4, () => db.query(`select * from public.notification_log`)), /permission denied/);
+  await db.query(`delete from public.notification_prefs`);
+});
+
+test('fase 9 · a quién se avisa: solicitud de apoyo (puede apoyar, con dispositivo y sin desactivarlo) y conteos pendientes (coordinador o supervisor)', async () => {
+  // — Solicitud de apoyo —
+  await db.query(`update public.support_requests set status = 'cancelada' where event_id = $1`, [U.evToday]);
+  await db.query(`delete from public.service_supporters where event_id = $1`, [U.evToday]);
+  const rq = (await rpc(U.cR1, `select public.create_support_request($1, 2, null, '{}'::uuid[]) id`, [U.evToday]))[0].id;
+  // Elegibles según la regla de apoyo (la misma que usa la solicitud)
+  const eligible = (await rows(`select m.user_id from public.memberships m where m.role in ('voluntario', 'supervisor') and public.can_support_event(m.user_id, $1)`, [U.evToday])).map((r) => r.user_id);
+  assert.ok(eligible.includes(U.vR4) && eligible.includes(U.vR5), 'hay personas elegibles para la prueba');
+  const aud = () => asServer(async () => (await rows(`select * from public.support_request_audience($1)`, [rq])).map((r) => r.user_id));
+  assert.deepEqual(await aud(), [], 'sin dispositivos no hay a quién avisar');
+  await sub(U.vR4, 'https://push.example/r4'); await sub(U.vR5, 'https://push.example/r5'); await sub(U.vR1, 'https://push.example/r1'); await sub(U.cR2, 'https://push.example/c2');
+  assert.deepEqual((await aud()).sort(), [U.vR4, U.vR5].sort(), 'solo quienes pueden apoyar y tienen dispositivo (no su propio grupo ni coordinadores)');
+  const row = (await asServer(() => rows(`select * from public.support_request_audience($1) limit 1`, [rq])))[0];
+  assert.deepEqual(Object.keys(row).sort(), ['filled', 'group_name', 'needed', 'service_date', 'site_name', 'user_id'], 'sin nombres ni correos');
+  assert.equal(row.group_name, 'R1');
+  await db.query(`insert into public.notification_prefs (user_id, support_requests) values ($1, false)`, [U.vR5]);
+  assert.deepEqual(await aud(), [U.vR4], 'quien desactivó este aviso no lo recibe');
+  await db.query(`update public.support_requests set status = 'cancelada' where id = $1`, [rq]);
+  assert.deepEqual(await aud(), [], 'una solicitud cancelada no avisa');
+  await denied(() => as(U.cR1, () => db.query(`select * from public.support_request_audience($1)`, [rq])), /permission denied/);
+  await denied(() => as(U.admin, () => db.query(`select * from public.pending_counts_audience()`)), /permission denied/);
+  await denied(() => as(U.vR4, () => db.query(`select public.claim_notification($1, 'x', $2, false)`, [U.vR4, rq])), /permission denied/);
+
+  // — Conteos pendientes —
+  await db.query(`delete from public.service_counts where event_id in ($1, $2)`, [U.evYest, U.evToday]);
+  await sub(U.cR1, 'https://push.example/c1');
+  const pend = () => asServer(() => rows(`select user_id, event_id from public.pending_counts_audience()`));
+  const p1 = await pend();
+  assert.ok(p1.some((r) => r.user_id === U.cR1 && r.event_id === U.evYest) && p1.some((r) => r.user_id === U.cR1 && r.event_id === U.evToday), 'el coordinador recibe los pendientes de hoy y de ayer');
+  assert.ok(!p1.some((r) => r.user_id === U.vR1 || r.user_id === U.cR2 || r.user_id === U.vR4), 'ni voluntarios ni otros grupos');
+  assert.ok(!p1.some((r) => r.event_id === U.evFut), 'ni servicios futuros');
+  await db.query(`insert into public.service_counts (event_id, location_id, total) values ($1, $2, 10)`, [U.evYest, U.locA]);
+  assert.ok(!(await pend()).some((r) => r.event_id === U.evYest), 'con algún total registrado ya no es pendiente');
+  await db.query(`insert into public.notification_prefs (user_id, pending_counts) values ($1, false)`, [U.cR1]);
+  assert.ok(!(await pend()).some((r) => r.user_id === U.cR1), 'quien lo desactivó no lo recibe');
+  await db.query(`delete from public.notification_prefs where user_id = $1`, [U.cR1]);
+  await db.query(`update public.service_events set service_date = public.today_co() - 2 where id = $1`, [U.evToday]);
+  assert.ok(!(await pend()).some((r) => r.event_id === U.evToday), 'pasado el plazo (más de 1 día) ya no se avisa');
+  await db.query(`update public.service_events set service_date = public.today_co() where id = $1`, [U.evToday]);
+
+  // — Que no se repita —
+  const claim = (u, kind, ref, daily) => asServer(async () => (await one(`select public.claim_notification($1, $2, $3, $4) ok`, [u, kind, ref, daily])).ok);
+  assert.equal(await claim(U.vR4, 'support_request', rq, false), true);
+  assert.equal(await claim(U.vR4, 'support_request', rq, false), false, 'una solicitud se avisa una sola vez por persona');
+  assert.equal(await claim(U.vR5, 'support_request', rq, false), true);
+  assert.equal(await claim(U.cR1, 'pending_counts', U.evToday, true), true);
+  assert.equal(await claim(U.cR1, 'pending_counts', U.evToday, true), false, 'los conteos, una vez al día');
+  assert.equal((await one(`select (sent_on = public.today_co()) as hoy from public.notification_log where kind = 'pending_counts' limit 1`)).hoy, true, 'el aviso diario se anota con la fecha de hoy');
+  await db.query(`update public.notification_log set sent_on = sent_on - 1 where kind = 'pending_counts'`);
+  assert.equal(await claim(U.cR1, 'pending_counts', U.evToday, true), true, 'y otra vez al día siguiente');
+  // Todo se va con la cuenta
+  await as(U.vR4, () => db.query(`select public.delete_my_account()`));
+  assert.equal(await count('push_subscriptions', `user_id = '${U.vR4}'`), 0);
+  assert.equal(await count('notification_log', `user_id = '${U.vR4}'`), 0);
 });

@@ -13,9 +13,12 @@ export const unmarkAbsent = (sb: SupabaseClient, eventId: string, userId: string
 export const addSupporter = (sb: SupabaseClient, eventId: string, userId: string) => run(sb.rpc("add_supporter", { p_event: eventId, p_user: userId }));
 export const removeSupporter = (sb: SupabaseClient, eventId: string, userId: string) => run(sb.rpc("remove_supporter", { p_event: eventId, p_user: userId }));
 
-export async function createSupportRequest(sb: SupabaseClient, eventId: string, needed: number, note: string, positionIds: string[]) {
+export async function createSupportRequest(_sb: SupabaseClient, eventId: string, needed: number, note: string, positionIds: string[]) {
   if (!Number.isInteger(needed) || needed < 1 || needed > 50) throw new Error("Indica cuántas personas necesitas (de 1 a 50).");
-  await run(sb.rpc("create_support_request", { p_event: eventId, p_needed: needed, p_note: note.trim() || null, p_positions: positionIds }));
+  // Pasa por el servidor para que, al publicarla, avise al teléfono de quienes pueden atenderla (los permisos los valida la base de datos).
+  const res = await fetch("/api/support/request", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ eventId, needed, note: note.trim() || null, positionIds }) });
+  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  if (!res.ok) throw new Error(data.error ?? "No se pudo publicar la solicitud.");
 }
 export const cancelSupportRequest = (sb: SupabaseClient, requestId: string) => run(sb.rpc("cancel_support_request", { p_request: requestId }));
 export const applyToRequest = (sb: SupabaseClient, requestId: string) => run(sb.rpc("apply_to_request", { p_request: requestId }));
