@@ -1118,3 +1118,274 @@ test('privacidad · baja de un integrante: se va con su grupo y sus asignaciones
   await as(U.admin, () => db.query(`select public.delete_person($1)`, [U.liderBaja3]));
   assert.deepEqual(await one(`select author_name, author_role from public.announcements where title = 'Aviso dos'`), { author_name: null, author_role: null });
 });
+
+// ───────────── Fase 7 · Reemplazos y apoyos (Campestre: grupos R1..R5 del domingo) ─────────────
+const rpc = (uid, sqlText, params = []) => as(uid, async () => (await db.query(sqlText, params)).rows);
+const nextOf = async (group) => (await one(`select id from public.service_events where group_id = $1 and status = 'programado' and service_date >= public.today_co() order by service_date limit 1`, [group])).id;
+
+test('fase 7 · preparación: personas de varios grupos de Campestre y el servicio próximo de R1', async () => {
+  U.gR5 = (await one(`select id from public.groups where service_slot_id = $1 and name = 'R5'`, [U.slotCamp])).id;
+  const invite7 = (email, group, role) => as(U.liderCamp, () => db.query(`insert into public.invitations (email, group_id, group_role) values ($1, $2, $3)`, [email, group, role]));
+  for (const [n, g, r] of [['cR1', U.gR1, 'coordinador'], ['sR1', U.gR1, 'supervisor'], ['vR1', U.gR1, 'voluntario'], ['vR2', U.gR2, 'voluntario'], ['cR2', U.gR2, 'coordinador'], ['sR3', U.gR3, 'supervisor'], ['vR4', U.gR4, 'voluntario'], ['vR5', U.gR5, 'voluntario']]) {
+    await invite7(`${n.toLowerCase()}@x.com`, g, r);
+    await signup(n, `${n.toLowerCase()}@x.com`);
+  }
+  // Posiciones propias de Campestre (la carga inicial solo trae las de Castellana)
+  const loc = (await one(`select l.id from public.locations l where l.site_id = $1 order by l.sort limit 1`, [U.sCamp])).id;
+  U.pCV1 = (await one(`insert into public.positions (location_id, code, name, kind) values ($1, 'C1', 'Entrada', 'voluntario') returning id`, [loc])).id;
+  U.pCV2 = (await one(`insert into public.positions (location_id, code, name, kind) values ($1, 'C2', 'Parqueadero', 'voluntario') returning id`, [loc])).id;
+  U.pCS = (await one(`insert into public.positions (location_id, code, name, kind) values ($1, 'C3', 'Supervisor general', 'supervisor') returning id`, [loc])).id;
+  U.evR1 = await nextOf(U.gR1);
+  const later = (await one(`select id from public.service_events where group_id = $1 and status = 'programado' and id <> $2 order by service_date offset 0 limit 1`, [U.gR1, U.evR1])).id;
+  assert.equal((await one(`select public.event_is_next($1) r`, [U.evR1])).r, true);
+  assert.equal((await one(`select public.event_is_next($1) r`, [later])).r, false, 'solo el próximo servicio del grupo');
+  assert.equal((await one(`select public.event_is_next('00000000-0000-4000-8000-0000000000ff') r`)).r, false);
+});
+
+test('fase 7 · ausencias: las registra quien planifica el próximo servicio; se quitan sus posiciones y no se le pueden asignar', async () => {
+  const assign = (uid, p, u) => as(uid, () => db.query(`insert into public.service_assignments (event_id, position_id, user_id) values ($1, $2, $3)`, [U.evR1, p, u]));
+  await as(U.cR1, () => db.query(`insert into public.service_plans (event_id) values ($1) on conflict do nothing`, [U.evR1]));
+  await assign(U.cR1, U.pCV1, U.vR1);
+  await assign(U.cR1, U.pCV2, U.vR1);
+  assert.equal(await count('service_assignments', `event_id = '${U.evR1}' and user_id = '${U.vR1}'`), 2);
+  await denied(() => rpc(U.vR1, `select public.mark_absent($1, $2)`, [U.evR1, U.vR1]), /No tienes permiso/);        // el voluntario no se marca solo
+  await denied(() => rpc(U.vR2, `select public.mark_absent($1, $2)`, [U.evR1, U.vR1]), /No tienes permiso/);
+  await denied(() => rpc(U.cR2, `select public.mark_absent($1, $2)`, [U.evR1, U.vR1]), /No tienes permiso/);        // coordinador de otro grupo
+  await denied(() => rpc(U.cR1, `select public.mark_absent($1, $2)`, [U.evR1, U.vR2]), /no está en este servicio/);
+  const later = (await one(`select id from public.service_events where group_id = $1 and status = 'programado' and id <> $2 order by service_date limit 1`, [U.gR1, U.evR1])).id;
+  await denied(() => rpc(U.cR1, `select public.mark_absent($1, $2)`, [later, U.vR1]), /próximo servicio/);
+  await rpc(U.sR1, `select public.mark_absent($1, $2)`, [U.evR1, U.vR1]);                                          // el supervisor también
+  assert.equal(await count('service_assignments', `event_id = '${U.evR1}' and user_id = '${U.vR1}'`), 0, 'se le quitan las posiciones');
+  await denied(() => assign(U.cR1, U.pCV1, U.vR1), /ausente/);
+  assert.equal(await as(U.vR1, () => count('service_absences')), 1, 'la persona ve su propia ausencia');
+  assert.equal(await as(U.vR2, () => count('service_absences')), 0);
+  assert.equal(await as(U.cR1, () => count('service_absences')), 1);
+  await rpc(U.liderCamp, `select public.unmark_absent($1, $2)`, [U.evR1, U.vR1]);                                  // el líder la deshace
+  await assign(U.cR1, U.pCV1, U.vR1);
+  await denied(() => rpc(U.vR1, `select public.unmark_absent($1, $2)`, [U.evR1, U.vR1]), /No tienes permiso/);
+});
+
+test('fase 7 · apoyo directo: se busca por nombre sin correos, solo de la misma sede, sin coordinadores ni choques', async () => {
+  const cands = (uid, q = '') => rpc(uid, `select * from public.support_candidates($1, $2)`, [U.evR1, q]);
+  const list = await cands(U.cR1);
+  const names = list.map((r) => r.full_name).sort();
+  assert.deepEqual(names, ['sR3', 'vR2', 'vR4', 'vR5'], 'voluntarios y supervisores de otros grupos de la sede');
+  assert.deepEqual(Object.keys(list[0]).sort(), ['full_name', 'group_name', 'role', 'user_id'], 'solo nombre, grupo y rol: nunca el correo');
+  assert.deepEqual((await cands(U.cR1, 'r2')).map((r) => r.full_name), ['vR2'], 'filtra por nombre');
+  assert.ok(!names.some((n) => ['cR2', 'cR1', 'sR1', 'vR1'].includes(n)), 'ni coordinadores ni los del propio grupo');
+  assert.ok(!(await cands(U.cR1, 'vol')).some((r) => r.user_id === U.vol1), 'ni personas de otras sedes');
+  await denied(() => cands(U.vR1), /No tienes permiso/);
+  await denied(() => cands(U.vR2), /No tienes permiso/);
+  assert.equal((await cands(U.liderCamp)).length, 4);
+
+  const add = (uid, user, ev = U.evR1) => rpc(uid, `select public.add_supporter($1, $2)`, [ev, user]);
+  await denied(() => add(U.vR1, U.vR2), /No tienes permiso/);
+  await denied(() => add(U.cR2, U.vR2), /No tienes permiso/);
+  await denied(() => add(U.cR1, U.cR2), /no puede apoyar/, 'un coordinador no apoya');
+  await denied(() => add(U.cR1, U.vol1), /no puede apoyar/, 'otra sede');
+  await denied(() => add(U.cR1, U.vR1), /no puede apoyar/, 'del mismo grupo');
+  const later = (await one(`select id from public.service_events where group_id = $1 and status = 'programado' and id <> $2 order by service_date limit 1`, [U.gR1, U.evR1])).id;
+  await denied(() => add(U.cR1, U.vR2, later), /próximo servicio/);
+  await add(U.sR1, U.vR2);
+  await add(U.cR1, U.sR3);
+  await denied(() => add(U.cR1, U.vR2), /no puede apoyar/, 'ya está agregado');
+  assert.equal(await count('service_supporters', `event_id = '${U.evR1}'`), 2);
+  assert.ok(!(await cands(U.cR1)).some((r) => r.user_id === U.vR2), 'quien ya apoya no sale en la búsqueda');
+  assert.equal((await one(`select source from public.service_supporters where user_id = $1`, [U.vR2])).source, 'directo');
+});
+
+test('fase 7 · un apoyo es parte del servicio ese día: se le asignan posiciones, ve la planeación publicada y el servicio', async () => {
+  const assign = (uid, p, u) => as(uid, () => db.query(`insert into public.service_assignments (event_id, position_id, user_id) values ($1, $2, $3)`, [U.evR1, p, u]));
+  await assign(U.cR1, U.pCV2, U.vR2);                                                       // voluntario de otro grupo en posición de voluntario
+  await denied(() => assign(U.cR1, U.pCS, U.vR2), /solo se asignan a supervisores/);
+  await assign(U.cR1, U.pCS, U.sR3);                                                        // supervisor de otro grupo en posición de supervisor
+  await denied(() => assign(U.cR1, U.pCV1, U.vR4), /no pertenece al grupo/, 'quien no apoya no puede recibir posiciones');
+  assert.equal(await count('service_assignments', `event_id = '${U.evR1}' and user_id in ('${U.vR2}', '${U.sR3}')`), 2);
+  assert.equal(await as(U.vR4, () => count('service_supporters')), 0, 'quien no es del servicio no ve los apoyos');
+  assert.equal(await as(U.vol1, () => count('service_supporters')), 0);
+  assert.equal(await as(U.vR2, () => count('service_supporters')), 2, 'el apoyo y el grupo sí los ven');
+  assert.equal(await as(U.vR1, () => count('service_supporters')), 2);
+  // Borrador: el apoyo no lo ve; publicado: sí, y también puede abrir el servicio
+  assert.equal(await as(U.vR2, () => count('service_assignments', `event_id = '${U.evR1}'`)), 0, 'el borrador no lo ve ni el apoyo');
+  assert.equal(await as(U.vR2, () => count('service_events', `id = '${U.evR1}'`)), 1, 'el apoyo puede abrir el servicio');
+  assert.equal(await as(U.vR4, () => count('service_events', `id = '${U.evR1}'`)), 0, 'quien no apoya, no');
+  await as(U.cR1, () => db.query(`update public.service_plans set status = 'publicado' where event_id = $1`, [U.evR1]));
+  assert.ok((await as(U.vR2, () => count('service_assignments', `event_id = '${U.evR1}'`))) >= 3, 'publicada: ve la planeación del grupo');
+  assert.equal(await as(U.vR4, () => count('service_assignments', `event_id = '${U.evR1}'`)), 0);
+  // event_people: integrantes y apoyos con su grupo de origen, sin correos
+  const people = await rpc(U.vR1, `select * from public.event_people($1)`, [U.evR1]);
+  assert.ok(people.some((p) => p.origin === 'apoyo' && p.full_name === 'vR2' && p.group_name === 'R2'));
+  assert.ok(people.some((p) => p.origin === 'miembro' && p.full_name === 'vR1'));
+  assert.deepEqual(Object.keys(people[0]).sort(), ['absent', 'full_name', 'group_name', 'origin', 'role', 'user_id']);
+  assert.equal((await rpc(U.vR2, `select * from public.event_people($1)`, [U.evR1])).length, people.length, 'el apoyo ve a todos los del servicio');
+  await denied(() => rpc(U.vR4, `select * from public.event_people($1)`, [U.evR1]), /No tienes permiso/);
+  assert.equal((await rpc(U.vR2, `select public.event_group_name($1) n`, [U.evR1]))[0].n, 'R1');
+  assert.equal((await rpc(U.vR4, `select public.event_group_name($1) n`, [U.evR1]))[0].n, null);
+  // Su propia lista
+  const mine = await rpc(U.vR2, `select * from public.my_support_events()`);
+  assert.equal(mine.length, 1);
+  assert.equal(mine[0].group_name, 'R1');
+});
+
+test('fase 7 · choques de horario: sin horas se asume choque; con horas, solo si se cruzan; una ausencia lo libera', async () => {
+  // Otro horario de Campestre el mismo domingo, con su grupo y su voluntario
+  const date = (await one(`select service_date::text d from public.service_events where id = $1`, [U.evR1])).d;
+  const slotAm = (await one(`insert into public.service_slots (site_id, day, shift) values ($1, 'domingo', 'am') returning id`, [U.sCamp])).id;
+  const gX = (await one(`insert into public.groups (service_slot_id, name) values ($1, 'AM-X') returning id`, [slotAm])).id;
+  await as(U.liderCamp, () => db.query(`insert into public.invitations (email, group_id, group_role) values ('vx@x.com', $1, 'voluntario')`, [gX]));
+  await signup('vX', 'vx@x.com');
+  await as(U.liderCamp, () => db.query(`select public.generate_service_events($1, $2::date, $2::date, $3)`, [slotAm, date, gX]));
+  const evX = (await one(`select id from public.service_events where slot_id = $1 and service_date = $2`, [slotAm, date])).id;
+  const can = async () => (await one(`select public.can_support_event($1, $2) r`, [U.vX, U.evR1])).r;
+  const setTimes = async (slot, a, s, e) => db.query(`update public.service_slots set arrival_time = $2, start_time = $3, end_time = $4 where id = $1`, [slot, a, s, e]);
+
+  assert.equal(await can(), false, 'sin horas cargadas se asume choque');
+  await setTimes(U.slotCamp, '12:00', '12:30', '14:00');
+  await setTimes(slotAm, '07:30', '08:00', '10:00');
+  assert.equal(await can(), true, 'horarios que no se cruzan: puede apoyar');
+  await setTimes(slotAm, '11:00', '11:30', '13:00');
+  assert.equal(await can(), false, 'horarios que se cruzan: choque');
+  await rpc(U.liderCamp, `select public.mark_absent($1, $2)`, [evX, U.vX]);   // su propio grupo sirve ese día, pero él no va
+  assert.equal(await can(), true, 'si no va a su propio servicio, queda libre para apoyar');
+  await rpc(U.liderCamp, `select public.unmark_absent($1, $2)`, [evX, U.vX]);
+  assert.equal(await can(), false);
+  // Quien ya apoya en un horario que se cruza no puede apoyar en otro igual
+  await setTimes(slotAm, '07:30', '08:00', '10:00');
+  await rpc(U.liderCamp, `select public.add_supporter($1, $2)`, [U.evR1, U.vX]);
+  await setTimes(slotAm, '11:00', '11:30', '13:00');
+  assert.equal(await count('service_supporters', `user_id = '${U.vX}'`), 1);
+  await rpc(U.liderCamp, `select public.remove_supporter($1, $2)`, [U.evR1, U.vX]);
+  // Se postula sin choque; cuando se va a aprobar ya tiene otro servicio que se cruza: no se aprueba
+  await setTimes(slotAm, '07:30', '08:00', '10:00');
+  const rq = (await rpc(U.cR1, `select public.create_support_request($1, 1, null, '{}'::uuid[]) id`, [U.evR1]))[0].id;
+  await rpc(U.vX, `select public.apply_to_request($1)`, [rq]);
+  await setTimes(slotAm, '11:00', '11:30', '13:00');
+  const appX = (await one(`select id from public.support_applications where user_id = $1`, [U.vX])).id;
+  await denied(() => rpc(U.cR1, `select public.decide_application($1, true)`, [appX]), /ya no puede apoyar/);
+  await rpc(U.cR1, `select public.cancel_support_request($1)`, [rq]);
+  await setTimes(U.slotCamp, null, null, null); await setTimes(slotAm, null, null, null);
+});
+
+test('fase 7 · solicitud de apoyo: la ven solo quienes pueden apoyar; postulación, aprobación, cupo y cierre', async () => {
+  // vR2 y sR3 ya eran apoyos directos: se liberan para probar la postulación
+  for (const u of [U.vR2, U.sR3]) await rpc(U.cR1, `select public.remove_supporter($1, $2)`, [U.evR1, u]);
+  const req = (uid, n = 2, note = 'Faltan manos', pos = [U.pCV1]) => rpc(uid, `select public.create_support_request($1, $2, $3, $4::uuid[]) id`, [U.evR1, n, note, pos]);
+  await denied(() => req(U.vR1), /No tienes permiso/);
+  await denied(() => req(U.cR2), /No tienes permiso/);
+  await denied(() => req(U.cR1, 0), /check/);
+  await denied(() => req(U.cR1, 51), /check/);
+  await denied(() => req(U.cR1, 2, 'x', [U.posVol]), /no es de la sede/);
+  const id = (await req(U.cR1, 2))[0].id;
+  await denied(() => req(U.sR1), /ya tiene una solicitud de apoyo abierta/);
+
+  const open = (uid) => rpc(uid, `select * from public.open_support_requests()`);
+  const seenBy = {};
+  for (const n of ['vR1', 'cR1', 'cR2', 'vR2', 'vR4', 'vR5', 'sR3', 'vol1', 'volSuba']) seenBy[n] = (await open(U[n])).length;
+  assert.deepEqual(seenBy, { vR1: 0, cR1: 0, cR2: 0, vR2: 1, vR4: 1, vR5: 1, sR3: 1, vol1: 0, volSuba: 0 },
+    'la ven voluntarios y supervisores de otros grupos de la sede; no su grupo, ni coordinadores, ni otras sedes');
+  const r = (await open(U.vR4))[0];
+  assert.equal(r.group_name, 'R1');
+  assert.equal(r.needed, 2);
+  assert.equal(r.filled, 0);
+  assert.deepEqual(r.position_names, ['C1 · Entrada']);
+  assert.deepEqual(Object.keys(r).sort(), ['application_id', 'day', 'filled', 'group_name', 'my_status', 'needed', 'note', 'position_names', 'request_id', 'service_date', 'shift', 'site_name', 'start_time']);
+
+  const apply = (uid) => rpc(uid, `select public.apply_to_request($1)`, [id]);
+  await denied(() => apply(U.vR1), /No puedes apoyar/);
+  await denied(() => apply(U.cR2), /No puedes apoyar/);
+  await denied(() => apply(U.vol1), /No puedes apoyar/);
+  await apply(U.vR4);
+  await denied(() => apply(U.vR4), /Ya te postulaste/);
+  await apply(U.vR5);
+  await apply(U.sR3);
+  assert.equal((await open(U.vR4))[0].my_status, 'pendiente');
+  assert.equal(await as(U.vR4, () => count('support_applications')), 1, 'cada quien ve solo su postulación');
+  assert.equal(await as(U.vR1, () => count('support_applications')), 0);
+  assert.equal(await as(U.cR1, () => count('support_applications', `request_id = '${id}'`)), 3, 'quien planifica ve todas');
+
+  const apps = await rpc(U.cR1, `select * from public.request_applications($1)`, [id]);
+  assert.deepEqual(apps.map((a) => a.full_name).sort(), ['sR3', 'vR4', 'vR5']);
+  assert.deepEqual(Object.keys(apps[0]).sort(), ['created_at', 'full_name', 'group_name', 'id', 'role', 'status', 'user_id']);
+  await denied(() => rpc(U.vR4, `select * from public.request_applications($1)`, [id]), /No tienes permiso/);
+  await denied(() => rpc(U.cR2, `select * from public.request_applications($1)`, [id]), /No tienes permiso/);
+
+  const appOf = (n) => apps.find((a) => a.full_name === n).id;
+  const decide = (uid, a, ok) => rpc(uid, `select public.decide_application($1, $2)`, [a, ok]);
+  await denied(() => decide(U.vR4, appOf('vR5'), true), /No tienes permiso/);
+  await denied(() => decide(U.cR2, appOf('vR5'), true), /No tienes permiso/);
+  await decide(U.cR1, appOf('vR4'), true);
+  assert.deepEqual(await one(`select source, request_id = $2 as ok from public.service_supporters where user_id = $1 and event_id = $3`, [U.vR4, id, U.evR1]), { source: 'solicitud', ok: true });
+  assert.equal((await one(`select public.support_filled($1) n`, [id])).n, 1);
+  await denied(() => decide(U.cR1, appOf('vR4'), true), /ya fue atendida/);
+  // Cupo: el supervisor de otro grupo (sR3 ya es apoyo directo) no cuenta; aprobar a vR5 llena la solicitud (2 de 2)
+  await decide(U.sR1, appOf('vR5'), true);
+  assert.equal((await one(`select public.support_filled($1) n`, [id])).n, 2);
+  await denied(() => decide(U.cR1, appOf('sR3'), true), /ya no está abierta/);   // no se pasa del cupo
+  assert.equal((await open(U.vR2)).length, 0, 'llena: ya no aparece para quien no se postuló');
+  assert.equal((await open(U.vR5))[0].my_status, 'aprobada', 'quien se postuló la sigue viendo');
+  await denied(() => apply(U.vR2), /ya no está abierta/);
+
+  // Un apoyo aprobado se retira solo (hasta el día anterior) y la vacante se reabre
+  await rpc(U.vR5, `select public.remove_supporter($1, $2)`, [U.evR1, U.vR5]);
+  assert.equal((await one(`select status from public.support_applications where user_id = $1`, [U.vR5])).status, 'retirada');
+  assert.equal((await one(`select public.support_filled($1) n`, [id])).n, 1);
+  assert.equal((await open(U.vR2)).length, 1, 'se reabrió');
+  await denied(() => rpc(U.vR4, `select public.remove_supporter($1, $2)`, [U.evR1, U.vR2]), /No tienes permiso/, 'nadie quita a otro');
+  // El día del servicio ya no se retira solo
+  const origDate = (await one(`select service_date::text d from public.service_events where id = $1`, [U.evR1])).d;
+  await db.query(`update public.service_events set service_date = public.today_co() where id = $1`, [U.evR1]);
+  await denied(() => rpc(U.vR4, `select public.remove_supporter($1, $2)`, [U.evR1, U.vR4]), /avisa a tu coordinador/);
+  await rpc(U.cR1, `select public.remove_supporter($1, $2)`, [U.evR1, U.vR4]);       // quien planifica sí
+  await db.query(`update public.service_events set service_date = $2 where id = $1`, [U.evR1, origDate]);
+  // Volver a postularse tras retirarse; rechazar; cancelar la solicitud
+  await apply(U.vR5);
+  await apply(U.vR2);
+  const apps2 = await rpc(U.cR1, `select * from public.request_applications($1)`, [id]);
+  await decide(U.cR1, apps2.find((a) => a.full_name === 'vR2').id, false);
+  assert.equal((await one(`select status from public.support_applications where user_id = $1`, [U.vR2])).status, 'rechazada');
+  await denied(() => apply(U.vR2), /Ya te postulaste/, 'una postulación rechazada no se repite');
+  await denied(() => rpc(U.vR4, `select public.cancel_support_request($1)`, [id]), /No tienes permiso/);
+  await rpc(U.cR1, `select public.cancel_support_request($1)`, [id]);
+  assert.equal((await one(`select status from public.support_applications where user_id = $1`, [U.vR5])).status, 'rechazada', 'al cancelar, lo pendiente se rechaza');
+  assert.equal((await open(U.vR4)).length, 0);
+  const id2 = (await req(U.liderCamp, 1, null, []))[0].id;
+  assert.ok(id2 && id2 !== id, 'tras cancelar se puede pedir de nuevo');
+});
+
+test('fase 7 · el grupo de origen se entera; nadie escribe directo en las tablas; limpieza al cambiar de grupo o salir', async () => {
+  await rpc(U.cR1, `select public.add_supporter($1, $2)`, [U.evR1, U.vR2]);
+  await as(U.cR1, () => db.query(`insert into public.service_assignments (event_id, position_id, user_id) values ($1, $2, $3)`, [U.evR1, U.pCV2, U.vR2]));
+  const out = (uid, g) => rpc(uid, `select * from public.outgoing_supports($1)`, [g]);
+  const list = await out(U.cR2, U.gR2);
+  assert.deepEqual(list.map((r) => r.full_name), ['vR2'], 'el coordinador de R2 ve que vR2 apoya a otro grupo');
+  assert.equal(list[0].to_group_name, 'R1');
+  assert.equal((await out(U.liderCamp, U.gR2)).length, 1);
+  assert.equal((await out(U.admin, U.gR2)).length, 1);
+  await denied(() => out(U.cR1, U.gR2), /No tienes permiso/);
+  await denied(() => out(U.vR2, U.gR2), /No tienes permiso/);
+  await denied(() => out(U.liderNogal2, U.gR2), /No tienes permiso/);
+
+  for (const t of ['service_absences', 'support_requests', 'support_request_positions', 'support_applications', 'service_supporters']) {
+    await denied(() => as(U.admin, () => db.query(`delete from public.${t}`)), /permission denied/);
+    await denied(() => as(U.cR1, () => db.query(`update public.${t} set created_at = now()`).catch((e) => { throw e; })), /permission denied|column/);
+  }
+  await denied(() => as(U.vR2, () => db.query(`insert into public.service_supporters (event_id, user_id, source) values ($1, $2, 'directo')`, [U.evR1, U.vR4])), /permission denied/);
+  await denied(() => as(U.vR2, () => db.query(`insert into public.service_absences (event_id, user_id) values ($1, $2)`, [U.evR1, U.vR1])), /permission denied/);
+  await db.exec(`set role anon`);
+  try {
+    for (const f of ['open_support_requests()', `support_candidates('${U.evR1}', '')`, `add_supporter('${U.evR1}', '${U.vR4}')`, `event_people('${U.evR1}')`, `outgoing_supports('${U.gR2}')`])
+      await denied(() => db.query(`select * from public.${f}`), /permission denied/);
+  } finally { await db.exec(`reset role`); }
+
+  // Quitar a un apoyo le quita sus posiciones; cambiar de grupo o hacerse coordinador le quita los apoyos futuros
+  assert.equal(await count('service_assignments', `event_id = '${U.evR1}' and user_id = '${U.vR2}'`), 1);
+  await rpc(U.cR1, `select public.remove_supporter($1, $2)`, [U.evR1, U.vR2]);
+  assert.equal(await count('service_assignments', `event_id = '${U.evR1}' and user_id = '${U.vR2}'`), 0, 'sin apoyo no queda posición');
+  await rpc(U.cR1, `select public.add_supporter($1, $2)`, [U.evR1, U.vR2]);
+  await db.query(`update public.memberships set group_id = $2 where user_id = $1`, [U.vR2, U.gR4]);
+  assert.equal(await count('service_supporters', `user_id = '${U.vR2}'`), 0, 'al cambiar de grupo se pierden sus apoyos futuros');
+  await rpc(U.cR1, `select public.add_supporter($1, $2)`, [U.evR1, U.sR3]);
+  assert.equal(await count('service_supporters', `user_id = '${U.sR3}'`), 1);
+  await as(U.sR3, () => db.query(`select public.delete_my_account()`));
+  assert.equal(await count('service_supporters', `user_id = '${U.sR3}'`), 0, 'al darse de baja, todo se va con la cuenta');
+});

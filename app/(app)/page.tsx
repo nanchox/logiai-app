@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { AnnouncementCard } from "@/components/announcements/AnnouncementCard";
 import { loadAnnouncements } from "@/lib/announcements/load";
+import { SupportRequests } from "@/components/support/SupportRequests";
 import { formatServiceDate, todayCo } from "@/lib/service/dates";
+import { loadOpenRequests } from "@/lib/support/load";
 import { loadEvents } from "@/lib/service/load";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
@@ -11,6 +13,7 @@ export default async function HomePage() {
 
   const supabase = await createClient();
   const recent = (await loadAnnouncements(supabase, 30)).filter((a) => a.status === "active").slice(0, 3);
+  const requests = (await loadOpenRequests(supabase)).slice(0, 3);
   const nextService = user.membership
     ? (await loadEvents(supabase, { from: todayCo(), groupId: user.membership.groupId, limit: 6 })).find((e) => e.status === "programado")
     : undefined;
@@ -45,6 +48,13 @@ export default async function HomePage() {
       ) : (
         <section className="rounded-2xl border border-line bg-surface p-5 text-muted">
           No perteneces a un grupo de servicio{user.isAdmin || user.isHead || user.leaderSites.length ? " (tu rol acompaña a los grupos)." : ". Pide a tu coordinador que te agregue."}
+        </section>
+      )}
+
+      {requests.length > 0 && (
+        <section aria-label="Solicitudes de apoyo" className="space-y-3">
+          <h2 className="text-lg font-extrabold">Piden apoyo en tu sede</h2>
+          <SupportRequests requests={requests} compact />
         </section>
       )}
 

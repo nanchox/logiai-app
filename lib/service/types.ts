@@ -40,7 +40,7 @@ export type PlanData = {
   files: PlanFile[];
 };
 
-export type HistoryItem = { eventId: string; date: string; siteName: string; day: string; shift: string; groupName: string | null; positionName: string; positionCode: string };
+export type HistoryItem = { eventId: string; date: string; siteName: string; day: string; shift: string; groupId: string | null; groupName: string | null; positionName: string; positionCode: string };
 
 /** Quién puede planificar un servicio (igual que can_plan_event en la base de datos). */
 export function canPlanEvent(

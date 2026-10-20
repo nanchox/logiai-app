@@ -9,7 +9,7 @@ import { assignPerson, copyPreviousPlan, savePositionNote, setPlanStatus, unassi
 import type { PlanData, PlanPosition, ServiceEvent } from "@/lib/service/types";
 import { canHold } from "@/lib/service/types";
 
-export type Person = { userId: string; name: string; role: string };
+export type Person = { userId: string; name: string; role: string; origin?: "miembro" | "apoyo"; groupName?: string; absent?: boolean };
 
 function byLocation(positions: PlanPosition[]) {
   const out: { name: string; items: PlanPosition[] }[] = [];
@@ -79,7 +79,7 @@ export function PlanEditor({
             {loc.items.map((p) => {
               const here = plan.assignments.filter((a) => a.positionId === p.id);
               const taken = new Set(here.map((a) => a.userId));
-              const candidates = people.filter((x) => canHold(x.role, p.kind) && !taken.has(x.userId));
+              const candidates = people.filter((x) => canHold(x.role, p.kind) && !taken.has(x.userId) && !x.absent);
               const mine = here.some((a) => a.userId === meId);
               return (
                 <li key={p.id} className={`rounded-xl border bg-surface p-3 ${mine ? "border-accent" : "border-line"}`} aria-label={`Posición ${p.code}`}>
@@ -106,7 +106,7 @@ export function PlanEditor({
                       <div className="flex gap-2">
                         <select aria-label={`Agregar persona a ${p.code}`} className={input} value={pick[p.id] ?? ""} onChange={(e) => setPick({ ...pick, [p.id]: e.target.value })}>
                           <option value="">Agregar persona…</option>
-                          {candidates.map((x) => <option key={x.userId} value={x.userId}>{x.name} · {GROUP_ROLE_LABEL[x.role]}</option>)}
+                          {candidates.map((x) => <option key={x.userId} value={x.userId}>{x.name} · {GROUP_ROLE_LABEL[x.role]}{x.origin === "apoyo" ? ` · Apoyo de ${x.groupName}` : ""}</option>)}
                         </select>
                         <button type="button" className={btn} disabled={busy || !pick[p.id]} onClick={() => run(async () => { await assignPerson(sb, event.id, p.id, pick[p.id]); setPick({ ...pick, [p.id]: "" }); })}>Agregar</button>
                       </div>
