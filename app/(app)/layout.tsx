@@ -2,12 +2,16 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { requireUser } from "@/lib/auth";
+import { loadOpenRequests } from "@/lib/support/load";
+import { createClient } from "@/lib/supabase/server";
 
 const navLink = "shrink-0 whitespace-nowrap rounded-lg px-3 py-2 !text-on-header no-underline hover:bg-white/10";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   if (!user.privacyAccepted) redirect("/aceptar");
+  // Solicitudes de apoyo que la persona puede atender y aún no ha respondido (contador del menú).
+  const pending = (await loadOpenRequests(await createClient())).filter((r) => r.myStatus === null).length;
 
   return (
     <>
@@ -19,7 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link href="/" className={navLink}>Inicio</Link>
             <Link href="/novedades" className={navLink}>Novedades</Link>
             <Link href="/manual" className={navLink}>Manual</Link>
-            <Link href="/servicio" className={navLink}>Mi servicio</Link>
+            <Link href="/servicio" className={navLink}>Mi servicio{pending > 0 && <span aria-label={`${pending} solicitudes de apoyo`} className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-xs font-extrabold text-on-accent">{pending}</span>}</Link>
             <Link href="/asistente" className={navLink}>Asistente</Link>
             {user.membership && <Link href="/grupo" className={navLink}>Mi grupo</Link>}
             {user.canManagePeople && <Link href="/personas" className={navLink}>Personas</Link>}

@@ -3,13 +3,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EventManage } from "@/components/service/EventManage";
 import { FilesPanel } from "@/components/service/FilesPanel";
+import { SupportPanel } from "@/components/support/SupportPanel";
 import { PlanEditor } from "@/components/service/PlanEditor";
 import { StatusBadges } from "@/components/service/RotationAdmin";
 import { requireUser } from "@/lib/auth";
 import { serviceLabel } from "@/lib/labels";
-import { loadMembers } from "@/lib/people/load";
 import { formatServiceDate } from "@/lib/service/dates";
-import { loadEvent, loadPlan, loadPlanPositions, loadRotationGroups } from "@/lib/service/load";
+import { addDays, todayCo } from "@/lib/service/dates";
+import { loadEvent, loadEvents, loadPlan, loadPlanPositions, loadRotationGroups } from "@/lib/service/load";
+import { loadApplications, loadEventPeople, loadEventRequest } from "@/lib/support/load";
 import { canPlanEvent } from "@/lib/service/types";
 import { createClient } from "@/lib/supabase/server";
 
@@ -24,13 +26,19 @@ export default async function ServicePage({ params }: PageProps<"/servicio/[id]"
 
   const canManage = user.isAdmin || user.isHead || user.leaderSites.some((s) => s.id === event.siteId);
   const canPlan = event.status === "programado" && canPlanEvent(user, event);
-  const [plan, positions, members, groups] = await Promise.all([
+  const [plan, positions, people, groups, upcoming] = await Promise.all([
     loadPlan(supabase, event.id),
     loadPlanPositions(supabase, event.siteId, event.day, event.shift),
-    event.groupId ? loadMembers(supabase, event.groupId) : Promise.resolve([]),
+    event.groupId ? loadEventPeople(supabase, event.id) : Promise.resolve([]),
     canManage ? loadRotationGroups(supabase) : Promise.resolve([]),
+    canPlan && event.groupId ? loadEvents(supabase, { from: todayCo(), until: addDays(todayCo(), 120), groupId: event.groupId, limit: 12 }) : Promise.resolve([]),
   ]);
-  const people = members.map((m) => ({ userId: m.userId, name: m.name, role: m.role }));
+  // Los apoyos y las ausencias son solo del próximo servicio programado del grupo.
+  const isNext = upcoming.find((e) => e.status === "programado")?.id === event.id;
+  const [request] = await Promise.all([isNext ? loadEventRequest(supabase, event.id) : Promise.resolve(null)]);
+  const applications = request ? await loadApplications(supabase, request.id) : [];
+  // Quien apoya no ve el nombre de un grupo ajeno con sus permisos normales.
+  if (event.groupId && !event.groupName) event.groupName = ((await supabase.rpc("event_group_name", { p_event: event.id })).data as string | null) ?? null;
 
   return (
     <main className="space-y-6">
@@ -61,6 +69,7 @@ export default async function ServicePage({ params }: PageProps<"/servicio/[id]"
 
       {event.status === "programado" && event.groupId && (
         <>
+          {canPlan && isNext && <SupportPanel event={event} people={people} request={request} applications={applications} positions={positions} />}
           <PlanEditor event={event} positions={positions} people={people} plan={plan} canPlan={canPlan} meId={user.id} />
           <FilesPanel event={event} files={plan.files} canPlan={canPlan} />
         </>

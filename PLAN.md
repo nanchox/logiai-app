@@ -137,7 +137,7 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 
 ## 8. Fases
 
-**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ✅ Fase 4 · ✅ Fase 5 · ✅ Fase 6 · ⬜ Fase 7
+**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ✅ Fase 4 · ✅ Fase 5 · ✅ Fase 6 · ✅ Fase 7 · ⬜ Fase 8
 
 1. **Base:** proyecto Next.js, esquema y RLS, login con Google y hook de lista blanca, roles, tema claro/oscuro, carga inicial (sedes, locations, admin, cabeza), importación del prototipo actual (mapa y zonas 1 a 6 de Castellana, Auditorio principal).
 2. **Manual (núcleo):** visor de mapas y pines, fichas de posición con fotos y YouTube, editor de pines, carga y reemplazo de mapas, posiciones por día y franja, flujos.
@@ -145,10 +145,38 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 4. **Novedades:** noticias, cambios y avisos para toda la iglesia, una sede, una sede y un día, un día en todas las sedes, o un grupo; con enlaces, fijado, programación y vencimiento. Publican cabeza/admin (todo), líder (su sede) y coordinador (su grupo).
 5. **Rotación y servicio:** rotación por horario y sede, cancelaciones que consumen el turno, servicios especiales, calendario, programación en PDF, Excel o imagen, planeación de posiciones con borrador y publicación, historial por persona.
 6. **Chat IA:** búsqueda de texto completo en español bajo los permisos de la persona, modelo gratuito de OpenRouter (varios IDs con respaldo), enlaces a las fuentes, límite diario por persona.
-7. **Lanzamiento ampliado:** PWA instalable, ajustes, Supabase Pro, publicación a unas 2000 personas.
+7. **Reemplazos y apoyos:** ausencias, apoyos de personas de otros grupos (directos o por solicitud con postulación) para el próximo servicio del grupo. Detalle en 8.2.
+8. **Lanzamiento ampliado:** PWA instalable (con avisos al teléfono de las solicitudes de apoyo), ajustes, Supabase Pro, publicación a unas 2000 personas.
 
 ## 8.1 Protección de datos (Ley 1581 de 2012)
 Aceptación obligatoria de la política de datos y los términos al primer ingreso (con constancia por versión), página Perfil (ver, rectificar, descargar y eliminar la cuenta) y política y términos públicos. Detalle en el README.
+
+## 8.2 Fase 7 · Reemplazos y apoyos (hecha)
+Cuando en un servicio planeado faltan personas, el grupo busca apoyo en otros grupos de su sede.
+
+**Alcance:** solo el **próximo servicio** del grupo (la siguiente fecha programada, no cancelada).
+
+**Ausencias**
+- Las registran el **coordinador o supervisor** del grupo (y el líder de su sede). El voluntario no las marca en la aplicación; avisa a su coordinador.
+- Al registrar la ausencia se le quitan sus posiciones de ese servicio, que quedan como vacantes en la planeación, y ya no se le puede asignar ese día. Se puede deshacer.
+
+**Quién puede apoyar**
+- Personas de la **misma sede**, de cualquier otro grupo u horario, con rol **voluntario o supervisor** (un supervisor puede cubrir posiciones de supervisor). Los coordinadores no apoyan, porque no ocupan posiciones.
+- **Sin choque de horario:** no puede apoyar quien tenga su propio grupo sirviendo ese mismo día a una hora que se cruce. Lo hace cumplir la base de datos.
+
+**Dos formas de sumar apoyos**
+1. **Directa:** el coordinador o supervisor (o el líder) busca **por nombre** entre las personas de su sede que pueden apoyar. Ve solo nombre, grupo y rol, **nunca el correo**, y la agrega como apoyo de ese servicio.
+2. **Solicitud de apoyo:** coordinador, supervisor o líder publica «necesitamos N personas», con nota y, si quiere, las posiciones que faltan («idealmente Puesto 5 y Puesto 12»).
+   - **Quiénes la ven:** solo las personas que pueden apoyar, en una tarjeta en **Inicio** y con un contador en **Mi servicio**.
+   - **Postulación:** quien puede apoyar se postula y el coordinador o supervisor del grupo que pide **aprueba o rechaza**.
+   - **Cierre:** la solicitud se cierra sola al llenarse las vacantes o al pasar la fecha. Se reabre si un apoyo se retira.
+
+**Después de aprobado**
+- El apoyo cuenta como integrante del servicio solo ese día. Se le puede asignar una posición, ve la planeación publicada de ese servicio y la fecha aparece en su **Mi servicio** y en su **historial**, con la etiqueta «apoyo a Grupo X».
+- Puede **retirarse él mismo hasta el día anterior**; después debe avisar a su coordinador.
+- El **coordinador de su grupo de origen** se entera (ve qué personas de su grupo apoyan a otros y cuándo), pero no tiene que aprobar.
+
+**Avisos:** dentro de la aplicación en esta fase. Las notificaciones al teléfono llegan en la fase 8, con la PWA.
 
 ## 9. Lo que se necesita crear (cuenta del ministerio o del admin)
 1. Proyecto en Supabase. Se toman las variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY`.

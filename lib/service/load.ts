@@ -94,16 +94,16 @@ export async function loadPlan(supabase: SupabaseClient, eventId: string): Promi
 export async function loadHistory(supabase: SupabaseClient, userId: string, limit = 40): Promise<HistoryItem[]> {
   const { data } = await supabase
     .from("service_assignments")
-    .select("event_id, positions(name, code), service_events!inner(service_date, groups(name), service_slots(day, shift, sites(name)))")
+    .select("event_id, positions(name, code), service_events!inner(service_date, group_id, groups(name), service_slots(day, shift, sites(name)))")
     .eq("user_id", userId);
   type Row = {
     event_id: string; positions: { name: string; code: string };
-    service_events: { service_date: string; groups: { name: string } | null; service_slots: { day: string; shift: string; sites: { name: string } } };
+    service_events: { service_date: string; group_id: string | null; groups: { name: string } | null; service_slots: { day: string; shift: string; sites: { name: string } } };
   };
   return ((data ?? []) as unknown as Row[])
     .map((r) => ({
       eventId: r.event_id, date: r.service_events.service_date, siteName: r.service_events.service_slots.sites.name,
-      day: r.service_events.service_slots.day, shift: r.service_events.service_slots.shift, groupName: r.service_events.groups?.name ?? null,
+      day: r.service_events.service_slots.day, shift: r.service_events.service_slots.shift, groupId: r.service_events.group_id, groupName: r.service_events.groups?.name ?? null,
       positionName: r.positions.name, positionCode: r.positions.code,
     }))
     .sort((a, b) => b.date.localeCompare(a.date) || a.positionCode.localeCompare(b.positionCode, "es", { numeric: true }))

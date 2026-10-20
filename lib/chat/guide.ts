@@ -13,17 +13,17 @@ export function guideFor(u: GuideUser): string[] {
     "Inicio: saludo, tu grupo, tu próximo servicio y las novedades recientes.",
     "Novedades: noticias, cambios y avisos de la iglesia, tu sede, tu día o tu grupo, con enlaces.",
     "Manual: mapas con las posiciones de tu sede (pines), cada posición con su descripción, fotos, videos de YouTube y uso de radio; también los flujos (qué hacer, por ejemplo, cuando se llena el auditorio principal). Se puede filtrar por día y franja.",
-    "Mi servicio: cuándo sirve tu grupo (calendario de las próximas semanas, con las fechas canceladas), las posiciones que te asignaron cuando la planeación está publicada, y tu historial de posiciones.",
+    "Mi servicio: cuándo sirve tu grupo (calendario de las próximas semanas, con las fechas canceladas), las posiciones que te asignaron cuando la planeación está publicada, y tu historial de posiciones. Si otro grupo de tu sede pide apoyo, aquí (y en Inicio) ves la solicitud y puedes postularte con «Quiero apoyar»; puedes retirarte hasta el día anterior.",
     "Asistente (esta pantalla): resuelve dudas con lo que está cargado en la aplicación.",
     "Perfil (tu nombre arriba): ves tus datos, la política de datos y los términos y condiciones, puedes descargar tus datos y eliminar tu cuenta cuando quieras.",
   ];
   if (u.groupRole) lines.splice(4, 0, "Mi grupo: quiénes sirven contigo y con qué rol (nunca se ven los correos de otros).");
   if (u.groupRole === "coordinador") {
     lines.push(
-      "Como coordinador: agregas supervisores y voluntarios a tu grupo (en Personas, con su correo de Google), planeas las posiciones del próximo servicio de tu grupo, las publicas para el grupo y puedes subir la programación como PDF, Excel o imagen. Los coordinadores coordinan el grupo y no ocupan posiciones.",
+      "Como coordinador: agregas supervisores y voluntarios a tu grupo (en Personas, con su correo de Google), planeas las posiciones del próximo servicio de tu grupo, las publicas para el grupo y puedes subir la programación como PDF, Excel o imagen. Si alguien no puede ir, lo marcas ausente en el servicio y sumas apoyos de otros grupos de la sede (los buscas por nombre o publicas una solicitud y apruebas las postulaciones). Los coordinadores coordinan el grupo y no ocupan posiciones, ni apoyan a otros grupos.",
     );
   } else if (u.groupRole === "supervisor") {
-    lines.push("Como supervisor: ayudas a planear las posiciones del próximo servicio de tu grupo (el borrador solo lo ven coordinadores y supervisores) y puedes subir la programación del servicio.");
+    lines.push("Como supervisor: ayudas a planear las posiciones del próximo servicio de tu grupo (el borrador solo lo ven coordinadores y supervisores), puedes subir la programación del servicio, marcar ausentes y pedir o agregar apoyos de otros grupos de la sede para el próximo servicio. También puedes apoyar a otros grupos cuando lo piden.");
   } else if (u.groupRole === "voluntario") {
     lines.push("Como voluntario: consultas el manual de tu sede, ves cuándo sirve tu grupo y qué posición te asignaron cuando se publica.");
   }
