@@ -137,7 +137,7 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 
 ## 8. Fases
 
-**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ✅ Fase 4 · ✅ Fase 5 · ✅ Fase 6 · ⬜ Fase 7 · ⬜ Fase 8
+**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ✅ Fase 4 · ✅ Fase 5 · ✅ Fase 6 · ✅ Fase 7 · ⬜ Fase 8
 
 1. **Base:** proyecto Next.js, esquema y RLS, login con Google y hook de lista blanca, roles, tema claro/oscuro, carga inicial (sedes, locations, admin, cabeza), importación del prototipo actual (mapa y zonas 1 a 6 de Castellana, Auditorio principal).
 2. **Manual (núcleo):** visor de mapas y pines, fichas de posición con fotos y YouTube, editor de pines, carga y reemplazo de mapas, posiciones por día y franja, flujos.
@@ -151,7 +151,7 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 ## 8.1 Protección de datos (Ley 1581 de 2012)
 Aceptación obligatoria de la política de datos y los términos al primer ingreso (con constancia por versión), página Perfil (ver, rectificar, descargar y eliminar la cuenta) y política y términos públicos. Detalle en el README.
 
-## 8.2 Fase 7 · Reemplazos y apoyos
+## 8.2 Fase 7 · Reemplazos y apoyos (hecha)
 Cuando en un servicio planeado faltan personas, el grupo busca apoyo en otros grupos de su sede.
 
 **Alcance:** solo el **próximo servicio** del grupo (la siguiente fecha programada, no cancelada).

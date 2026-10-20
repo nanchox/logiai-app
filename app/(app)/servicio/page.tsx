@@ -28,6 +28,8 @@ export default async function MyServicePage() {
     loadMyAbsences(supabase, user.id),
     groupId && user.membership?.role === "coordinador" ? loadOutgoingSupports(supabase, groupId) : Promise.resolve([]),
   ]);
+  // Quien apoya no ve el nombre de un grupo ajeno con sus permisos normales: se toma de sus apoyos.
+  const supportGroup = new Map(supportEvents.map((e) => [e.eventId, e.groupName]));
   const mySupports = supportEvents.filter((e) => e.date >= today && e.status === "programado");
   const mine = groupId ? events.filter((e) => e.groupId === groupId) : [];
   const next = mine.find((e) => e.status === "programado");
@@ -131,7 +133,7 @@ export default async function MyServicePage() {
             {history.map((h) => (
               <li key={`${h.eventId}-${h.positionCode}`} className="flex flex-wrap items-center gap-2 px-4 py-3">
                 <span className="w-36 font-semibold">{formatServiceDateShort(h.date)}</span>
-                <span className="flex-1"><span className="font-semibold">{h.positionCode} · {h.positionName}</span><span className="text-muted"> · {serviceLabel(h.day, h.shift)} · {h.siteName}</span>{groupId && h.groupId && h.groupId !== groupId && <span className="ml-2 rounded-full bg-info px-2 py-0.5 text-xs font-bold text-on-info">Apoyo a {h.groupName}</span>}</span>
+                <span className="flex-1"><span className="font-semibold">{h.positionCode} · {h.positionName}</span><span className="text-muted"> · {serviceLabel(h.day, h.shift)} · {h.siteName}</span>{groupId && h.groupId && h.groupId !== groupId && <span className="ml-2 rounded-full bg-info px-2 py-0.5 text-xs font-bold text-on-info">Apoyo a {h.groupName ?? supportGroup.get(h.eventId) ?? "otro grupo"}</span>}</span>
                 <span className="text-xs text-muted">{h.date > today ? "Próximo" : ""}</span>
               </li>
             ))}
