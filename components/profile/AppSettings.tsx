@@ -74,7 +74,13 @@ export function PushSettings({ vapidKey, userId, isPlanner }: { vapidKey: string
     return <p className="text-sm text-muted">{isIos() && !isStandalone() ? "En iPhone, primero instala la aplicación en la pantalla de inicio (arriba) y ábrela desde ahí: así podrás activar los avisos." : "Este navegador no admite avisos."}</p>;
   }
 
-  const setPref = (patch: Partial<Prefs>) => run(async () => { const next = { ...prefs, ...patch }; await savePrefs(sb, userId, next); setPrefs(next); });
+  // El cambio se ve al instante y, si no se pudo guardar, se devuelve a como estaba.
+  const setPref = (patch: Partial<Prefs>) => {
+    const before = prefs;
+    const next = { ...prefs, ...patch };
+    setPrefs(next);
+    void run(async () => { try { await savePrefs(sb, userId, next); } catch (e) { setPrefs(before); throw e; } });
+  };
   return (
     <div className="space-y-3">
       {denied && <p className="text-sm text-danger">Bloqueaste los avisos en este navegador. Actívalos en la configuración del sitio (el candado junto a la dirección) y vuelve a intentar.</p>}

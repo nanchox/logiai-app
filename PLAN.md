@@ -137,7 +137,7 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 
 ## 8. Fases
 
-**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ✅ Fase 4 · ✅ Fase 5 · ✅ Fase 6 · ✅ Fase 7 · ✅ Fase 8 · ⬜ Fase 9
+**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ✅ Fase 4 · ✅ Fase 5 · ✅ Fase 6 · ✅ Fase 7 · ✅ Fase 8 · ✅ Fase 9 · ⬜ Publicación ampliada
 
 1. **Base:** proyecto Next.js, esquema y RLS, login con Google y hook de lista blanca, roles, tema claro/oscuro, carga inicial (sedes, locations, admin, cabeza), importación del prototipo actual (mapa y zonas 1 a 6 de Castellana, Auditorio principal).
 2. **Manual (núcleo):** visor de mapas y pines, fichas de posición con fotos y YouTube, editor de pines, carga y reemplazo de mapas, posiciones por día y franja, flujos.
@@ -147,7 +147,8 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 6. **Chat IA:** búsqueda de texto completo en español bajo los permisos de la persona, modelo gratuito de OpenRouter (varios IDs con respaldo), enlaces a las fuentes, límite diario por persona.
 7. **Reemplazos y apoyos:** ausencias, apoyos de personas de otros grupos (directos o por solicitud con postulación) para el próximo servicio del grupo. Detalle en 8.2.
 8. **Conteos y totales:** guía de conteo (imagen) por sede y día de la semana, capacidad por ubicación, captura del total final por servicio y reporte semanal. Detalle en 8.3.
-9. **Lanzamiento ampliado:** PWA instalable (con avisos al teléfono de las solicitudes de apoyo y de los conteos pendientes), ajustes, Supabase Pro, publicación a unas 2000 personas.
+9. **Aplicación instalable y avisos (hecha):** PWA instalable, pantalla sin conexión, avisos al teléfono de las solicitudes de apoyo y de los conteos pendientes, y ajustes en Perfil. Detalle en el README.
+10. **Publicación ampliada (pendiente):** Supabase Pro, sacar el consentimiento de Google del modo «Testing» y publicar a unas 2000 personas.
 
 ## 8.1 Protección de datos (Ley 1581 de 2012)
 Aceptación obligatoria de la política de datos y los términos al primer ingreso (con constancia por versión), página Perfil (ver, rectificar, descargar y eliminar la cuenta) y política y términos públicos. Detalle en el README.
