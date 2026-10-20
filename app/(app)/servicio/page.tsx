@@ -7,6 +7,7 @@ import { requireUser } from "@/lib/auth";
 import { serviceLabel } from "@/lib/labels";
 import { addDays, formatServiceDate, formatServiceDateShort, todayCo } from "@/lib/service/dates";
 import { loadEvents, loadHistory, loadPlan, loadPlanPositions } from "@/lib/service/load";
+import { loadPendingCounts } from "@/lib/counts/load";
 import { loadMyAbsences, loadMySupportEvents, loadOpenRequests, loadOutgoingSupports } from "@/lib/support/load";
 import { createClient } from "@/lib/supabase/server";
 
@@ -20,13 +21,15 @@ export default async function MyServicePage() {
   const staff = user.isAdmin || user.isHead || user.leaderSites.length > 0;
 
   // Un miembro ve los servicios de su grupo; quien acompaña a los grupos, los de su alcance.
-  const [events, history, requests, supportEvents, absences, outgoing] = await Promise.all([
+  const planner = !!user.membership && ["coordinador", "supervisor"].includes(user.membership.role);
+  const [events, history, requests, supportEvents, absences, outgoing, pendingCounts] = await Promise.all([
     loadEvents(supabase, { from: today, until: addDays(today, 56), limit: 80, ...(!staff && groupId ? { groupId } : {}) }),
     loadHistory(supabase, user.id),
     loadOpenRequests(supabase),
     loadMySupportEvents(supabase),
     loadMyAbsences(supabase, user.id),
     groupId && user.membership?.role === "coordinador" ? loadOutgoingSupports(supabase, groupId) : Promise.resolve([]),
+    groupId && planner ? loadPendingCounts(supabase, groupId, today) : Promise.resolve([]),
   ]);
   // Quien apoya no ve el nombre de un grupo ajeno con sus permisos normales: se toma de sus apoyos.
   const supportGroup = new Map(supportEvents.map((e) => [e.eventId, e.groupName]));
@@ -65,6 +68,19 @@ export default async function MyServicePage() {
           ) : (
             <p className="mt-1 text-muted">Todavía no hay servicios programados para tu grupo. Tu líder de sede los genera en la rotación.</p>
           )}
+        </section>
+      )}
+
+      {pendingCounts.length > 0 && (
+        <section aria-label="Conteos pendientes" className="rounded-2xl border border-danger/60 bg-danger/10 p-4">
+          <h2 className="text-lg font-extrabold">Falta registrar los conteos</h2>
+          <ul className="mt-2 space-y-1">
+            {pendingCounts.map((e) => (
+              <li key={e.id} className="text-sm">
+                {formatServiceDate(e.date)} · {serviceLabel(e.day, e.shift)} · {e.siteName} — <Link href={`/servicio/${e.id}`} className="font-semibold">Registrar conteos</Link>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 

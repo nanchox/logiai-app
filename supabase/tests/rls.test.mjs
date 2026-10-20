@@ -1389,3 +1389,153 @@ test('fase 7 · el grupo de origen se entera; nadie escribe directo en las tabla
   await as(U.sR3, () => db.query(`select public.delete_my_account()`));
   assert.equal(await count('service_supporters', `user_id = '${U.sR3}'`), 0, 'al darse de baja, todo se va con la cuenta');
 });
+
+// ───────────── Fase 8 · Conteos y totales (Campestre) ─────────────
+const saveCounts = (uid, ev, arr) => rpc(uid, `select public.save_counts($1, $2::jsonb)`, [ev, JSON.stringify(arr)]);
+const totalsOf = async (ev) => Object.fromEntries((await rows(`select l.name, c.total from public.service_counts c join public.locations l on l.id = c.location_id where c.event_id = $1 order by l.name`, [ev])).map((r) => [r.name, r.total]));
+
+test('fase 8 · capacidad: la fija el líder de la sede; no puede quedar por debajo de un conteo registrado', async () => {
+  const locs = await rows(`select id, name from public.locations where site_id = $1 order by sort, name`, [U.sCamp]);
+  U.locA = locs[0].id; U.locB = locs[1].id; U.locNameA = locs[0].name; U.locNameB = locs[1].name;
+  U.locCas = (await one(`select id from public.locations where site_id = $1 order by sort limit 1`, [U.sCas])).id;
+  const cap = (uid, loc, n) => as(uid, async () => (await db.query(`update public.locations set capacity = $2 where id = $1`, [loc, n])).affectedRows);
+  assert.equal(await cap(U.liderCamp, U.locA, 500), 1);
+  assert.equal(await cap(U.admin, U.locB, 120), 1);
+  assert.equal(await cap(U.vR1, U.locA, 1), 0, 'un voluntario no cambia la capacidad');
+  assert.equal(await cap(U.cR1, U.locA, 1), 0, 'ni un coordinador');
+  assert.equal(await cap(U.liderNogal2, U.locA, 1), 0, 'ni el líder de otra sede');
+  await denied(() => cap(U.liderCamp, U.locA, -1), /check/);
+  await denied(() => cap(U.liderCamp, U.locA, 100001), /check/);
+  assert.equal((await one(`select capacity from public.locations where id = $1`, [U.locA])).capacity, 500);
+  assert.equal(await cap(U.admin, U.locCas, 800), 1);
+});
+
+test('fase 8 · guía de conteo: una por sede y día; la ven quienes sirven ese día y los líderes; solo el líder la carga', async () => {
+  const put = (uid, site, day, path) => as(uid, () => db.query(`insert into public.count_guides (site_id, day, image_path) values ($1, $2, $3) on conflict (site_id, day) do update set image_path = excluded.image_path`, [site, day, path]));
+  await put(U.liderCamp, U.sCamp, 'domingo', 'campestre/domingo/g1.png');
+  await put(U.liderCamp, U.sCamp, 'domingo', 'campestre/domingo/g2.png');      // reemplazar
+  await put(U.admin, U.sCamp, 'sabado', 'campestre/sabado/g1.png');
+  await denied(() => put(U.cR1, U.sCamp, 'miercoles', 'campestre/miercoles/x.png'), /row-level security/);
+  await denied(() => put(U.liderNogal2, U.sCamp, 'miercoles', 'campestre/miercoles/x.png'), /row-level security/);
+  await denied(() => put(U.liderCamp, U.sCas, 'domingo', 'castellana/domingo/x.png'), /row-level security/);
+  assert.equal(await count('count_guides', `site_id = '${U.sCamp}'`), 2, 'una por sede y día');
+  // Quién ve cada una: el grupo R1 sirve el domingo de Campestre; nadie de él sirve el sábado
+  const seen = async (uid) => (await as(uid, () => rows(`select day from public.count_guides where site_id = $1 order by day`, [U.sCamp]))).map((r) => r.day);
+  assert.deepEqual(await seen(U.vR1), ['domingo'], 'el grupo que sirve ese día');
+  assert.deepEqual(await seen(U.cR1), ['domingo']);
+  assert.deepEqual(await seen(U.liderCamp), ['sabado', 'domingo']);
+  assert.deepEqual(await seen(U.admin), ['sabado', 'domingo']);
+  assert.deepEqual(await seen(U.cabeza), ['sabado', 'domingo']);
+  assert.deepEqual(await seen(U.vol1), [], 'otra sede');
+  assert.deepEqual(await seen(U.liderNogal2), []);
+  assert.deepEqual(await seen(U.vX), ['domingo'], 'quien sirve ese día en otro horario de la sede también');
+  // Storage
+  const obj = (uid, path) => as(uid, () => db.query(`insert into storage.objects (bucket_id, name) values ('counts', $1)`, [path]));
+  await obj(U.liderCamp, 'campestre/domingo/g2.png');
+  await denied(() => obj(U.cR1, 'campestre/domingo/y.png'), /row-level security/);
+  await denied(() => obj(U.liderNogal2, 'campestre/domingo/y.png'), /row-level security/);
+  await denied(() => obj(U.liderCamp, 'castellana/domingo/y.png'), /row-level security/);
+  const vis = (uid) => as(uid, async () => (await one(`select count(*)::int n from storage.objects where bucket_id = 'counts'`)).n);
+  assert.equal(await vis(U.vR1), 1);
+  assert.equal(await vis(U.vol1), 0);
+  assert.equal(await vis(U.liderNogal2), 0);
+  assert.equal((await one(`select public from storage.buckets where id = 'counts'`)).public, false);
+});
+
+test('fase 8 · captura: quién, cuándo (desde el día; plazo de 24 horas), validación contra la capacidad, todo o nada', async () => {
+  const mk = async (offset) => (await one(`insert into public.service_events (slot_id, service_date, group_id, kind, turn) values ($1, public.today_co() + $2::int, $3, 'rotacion', 0) returning id`, [U.slotCamp, offset, U.gR1])).id;
+  U.evToday = await mk(0); U.evYest = await mk(-1); U.evOld = await mk(-2); U.evFut = await mk(1);
+  const ok = [{ location_id: U.locA, total: 300 }, { location_id: U.locB, total: 100 }];
+
+  // Quién
+  await denied(() => saveCounts(U.vR1, U.evToday, ok), /No puedes registrar/);                 // un voluntario no
+  await denied(() => saveCounts(U.cR2, U.evToday, ok), /No puedes registrar/);                 // coordinador de otro grupo
+  await denied(() => saveCounts(U.liderNogal2, U.evToday, ok), /No puedes registrar/);
+  await denied(() => saveCounts(U.vol1, U.evToday, ok), /No puedes registrar/);
+  await saveCounts(U.sR1, U.evToday, ok);                                                       // un supervisor del grupo sí
+  assert.deepEqual(await totalsOf(U.evToday), { [U.locNameA]: 300, [U.locNameB]: 100 });
+  // Cuándo
+  await denied(() => saveCounts(U.cR1, U.evFut, ok), /No puedes registrar/, 'antes del día del servicio no');
+  await denied(() => saveCounts(U.liderCamp, U.evFut, ok), /No puedes registrar/);
+  await saveCounts(U.cR1, U.evYest, ok);                                                        // ayer: dentro del plazo
+  await denied(() => saveCounts(U.cR1, U.evOld, ok), /No puedes registrar/, 'pasadas las 24 horas, el coordinador ya no');
+  await denied(() => saveCounts(U.sR1, U.evOld, ok), /No puedes registrar/);
+  await saveCounts(U.liderCamp, U.evOld, ok);                                                   // el líder sí
+  await saveCounts(U.admin, U.evOld, [{ location_id: U.locA, total: 310 }]);                    // y el administrador
+  assert.equal((await totalsOf(U.evOld))[U.locNameA], 310);
+
+  // Validación contra la capacidad (500 y 120): nunca se supera
+  await denied(() => saveCounts(U.cR1, U.evToday, [{ location_id: U.locB, total: 121 }]), /no puede superar su capacidad \(120\)/);
+  await saveCounts(U.cR1, U.evToday, [{ location_id: U.locB, total: 120 }]);                    // el límite exacto se permite
+  await denied(() => saveCounts(U.cR1, U.evToday, [{ location_id: U.locA, total: -1 }]), /número entero/);
+  await denied(() => saveCounts(U.cR1, U.evToday, [{ location_id: U.locA, total: 1.5 }]), /número entero/);
+  await denied(() => saveCounts(U.cR1, U.evToday, [{ location_id: U.locA, total: '12' }]), /número entero/);
+  await denied(() => saveCounts(U.cR1, U.evToday, [{ location_id: 'no-es-uuid', total: 1 }]), /no son válidos/);
+  await denied(() => saveCounts(U.cR1, U.evToday, { location_id: U.locA, total: 1 }), /no son válidos/);
+  await denied(() => saveCounts(U.cR1, U.evToday, [{ location_id: U.locCas, total: 1 }]), /no es de la sede/, 'ubicación de otra sede');
+  // Una ubicación sin capacidad registrada no admite conteo
+  const locC = (await one(`insert into public.locations (site_id, name, kind) values ($1, 'Salón sin capacidad', 'salon') returning id`, [U.sCamp])).id;
+  await denied(() => saveCounts(U.cR1, U.evToday, [{ location_id: locC, total: 5 }]), /no tiene su capacidad registrada/);
+  // Todo o nada
+  await denied(() => saveCounts(U.cR1, U.evToday, [{ location_id: U.locA, total: 1 }, { location_id: U.locB, total: 999 }]), /no puede superar/);
+  assert.equal((await totalsOf(U.evToday))[U.locNameA], 300, 'si uno falla, no se guarda ninguno');
+  // Parcial, y un total nulo lo borra
+  await saveCounts(U.cR1, U.evToday, [{ location_id: U.locA, total: 280 }]);
+  assert.deepEqual(await totalsOf(U.evToday), { [U.locNameA]: 280, [U.locNameB]: 120 });
+  await saveCounts(U.cR1, U.evToday, [{ location_id: U.locB, total: null }]);
+  assert.deepEqual(await totalsOf(U.evToday), { [U.locNameA]: 280 });
+  // Un servicio cancelado o sin grupo no tiene conteos
+  const canc = (await one(`insert into public.service_events (slot_id, service_date, group_id, kind, turn) values ($1, public.today_co() - 5, $2, 'rotacion', 0) returning id`, [U.slotCamp, U.gR1])).id;
+  await db.query(`insert into public.service_cancellations (service_date, site_id, slot_id) values (public.today_co() - 5, $1, $2)`, [U.sCamp, U.slotCamp]);
+  await denied(() => saveCounts(U.liderCamp, canc, ok), /No puedes registrar/);
+  // Restricciones directas de la tabla
+  await denied(() => as(U.liderCamp, () => db.query(`insert into public.service_counts (event_id, location_id, total) values ($1, $2, 1)`, [U.evToday, U.locA])), /permission denied/);
+  await denied(() => as(U.admin, () => db.query(`update public.service_counts set total = 1`)), /permission denied/);
+  await denied(() => as(U.admin, () => db.query(`delete from public.service_counts`)), /permission denied/);
+  // La base de datos también lo impide si se intenta por debajo de las funciones
+  await denied(() => db.query(`update public.service_counts set total = 501 where event_id = $1 and location_id = $2`, [U.evToday, U.locA]), /no puede superar su capacidad/);
+});
+
+test('fase 8 · quién ve los totales y el historial de cambios; la capacidad no baja de lo ya contado', async () => {
+  const mine = (uid) => as(uid, () => count('service_counts'));
+  const total = await count('service_counts');
+  assert.equal(await mine(U.admin), total);
+  assert.equal(await mine(U.cabeza), total);
+  assert.equal(await mine(U.liderCamp), total, 'el líder ve los de su sede');
+  assert.ok(await mine(U.cR1) >= 3, 'el coordinador ve los de su grupo');
+  assert.equal(await mine(U.sR1), await mine(U.cR1), 'y el supervisor también');
+  assert.equal(await mine(U.cR2), 0, 'otro grupo no');
+  assert.equal(await mine(U.vR1), 0, 'un voluntario no ve totales');
+  assert.equal(await mine(U.vol1), 0);
+  assert.equal(await mine(U.liderNogal2), 0, 'el líder de otra sede no');
+  await db.exec(`set role anon`);
+  try { await denied(() => db.query(`select * from public.service_counts`), /permission denied/); } finally { await db.exec(`reset role`); }
+
+  // Historial: quién cambió qué y cuándo (solo líder, cabeza, administrador)
+  const log = await rpc(U.liderCamp, `select * from public.count_log($1)`, [U.evToday]);
+  assert.ok(log.length >= 4);
+  assert.deepEqual(Object.keys(log[0]).sort(), ['changed_at', 'full_name', 'location_name', 'new_total', 'old_total']);
+  assert.ok(log.some((l) => l.old_total === 300 && l.new_total === 280), 'registra el valor anterior y el nuevo');
+  assert.ok(log.some((l) => l.new_total === null && l.old_total === 120), 'y los borrados');
+  assert.ok(log.every((l) => l.full_name), 'con quién lo cambió');
+  await denied(() => rpc(U.cR1, `select * from public.count_log($1)`, [U.evToday]), /No tienes permiso/);
+  await denied(() => rpc(U.liderNogal2, `select * from public.count_log($1)`, [U.evToday]), /No tienes permiso/);
+  assert.equal(await as(U.cR1, () => count('service_count_log')), 0);
+  assert.ok(await as(U.liderCamp, () => count('service_count_log')) >= 4);
+
+  // La capacidad no puede bajar de un conteo ya registrado (sí subir)
+  const maxA = Number((await one(`select max(total)::int m from public.service_counts where location_id = $1`, [U.locA])).m);
+  assert.ok(maxA > 0);
+  await denied(() => as(U.liderCamp, () => db.query(`update public.locations set capacity = $2 where id = $1`, [U.locA, maxA - 1])), /la capacidad no puede ser menor/);
+  await denied(() => as(U.liderCamp, () => db.query(`update public.locations set capacity = null where id = $1`, [U.locA])), /la capacidad no puede ser menor/);
+  await as(U.liderCamp, () => db.query(`update public.locations set capacity = $2 where id = $1`, [U.locA, maxA]));
+  await as(U.liderCamp, () => db.query(`update public.locations set capacity = 500 where id = $1`, [U.locA]));
+  // Al eliminar el servicio se van sus totales y su historial; al eliminar a quien contó, el total queda sin nombre
+  const before = await count('service_counts');
+  await db.query(`delete from public.service_events where id = $1`, [U.evOld]);
+  assert.ok(await count('service_counts') < before);
+  assert.equal(await count('service_count_log', `event_id = '${U.evOld}'`), 0);
+  await saveCounts(U.sR1, U.evToday, [{ location_id: U.locB, total: 50 }]);
+  await as(U.sR1, () => db.query(`select public.delete_my_account()`));
+  assert.ok(await count('service_counts', `counted_by is null`) >= 1, 'los totales no son datos personales: se conservan sin nombre');
+});

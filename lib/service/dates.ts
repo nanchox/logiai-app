@@ -19,3 +19,9 @@ export function addDays(d: string, n: number): string {
   x.setUTCDate(x.getUTCDate() + n);
   return x.toISOString().slice(0, 10);
 }
+
+/** Lunes de la semana de una fecha (las semanas del reporte van de lunes a domingo). */
+export function mondayOf(d: string): string {
+  const dow = at(d).getUTCDay();   // 0 = domingo
+  return addDays(d, dow === 0 ? -6 : 1 - dow);
+}

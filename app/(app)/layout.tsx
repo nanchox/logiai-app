@@ -24,6 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link href="/novedades" className={navLink}>Novedades</Link>
             <Link href="/manual" className={navLink}>Manual</Link>
             <Link href="/servicio" className={navLink}>Mi servicio{pending > 0 && <span aria-label={`${pending} solicitudes de apoyo`} className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-xs font-extrabold text-on-accent">{pending}</span>}</Link>
+            {(user.isAdmin || user.isHead || user.leaderSites.length > 0 || (!!user.membership && ["coordinador", "supervisor"].includes(user.membership.role))) && <Link href="/conteos" className={navLink}>Conteos</Link>}
             <Link href="/asistente" className={navLink}>Asistente</Link>
             {user.membership && <Link href="/grupo" className={navLink}>Mi grupo</Link>}
             {user.canManagePeople && <Link href="/personas" className={navLink}>Personas</Link>}
