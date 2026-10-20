@@ -1,7 +1,7 @@
 # LogiAI
 
 Manual de logística y servicio de **El Lugar de Su Presencia**: mapas, posiciones, indicaciones, novedades y chat con IA.
-El plan completo está en [`PLAN.md`](PLAN.md). Estado actual: **Fases 1 a 7** completas (base, login, permisos, manual con mapas y posiciones, fotos, videos, flujos, personas y grupos, novedades, rotación y servicio, el asistente de IA, y reemplazos y apoyos). Sigue el lanzamiento ampliado (PWA y publicación a unas 2000 personas).
+El plan completo está en [`PLAN.md`](PLAN.md). Estado actual: **Fases 1 a 8** completas (base, login, permisos, manual con mapas y posiciones, fotos, videos, flujos, personas y grupos, novedades, rotación y servicio, el asistente de IA, reemplazos y apoyos, y conteos y totales). Sigue el lanzamiento ampliado (PWA y publicación a unas 2000 personas).
 
 - **App:** Next.js 16 (App Router) en Vercel · **Datos, login y archivos:** Supabase
 - `legacy/` — prototipo original (HTML estático) y las imágenes de mapas de Castellana
@@ -109,6 +109,16 @@ Cuando en un servicio planeado falta gente, el grupo suma apoyo de otros grupos 
 - **Avisos:** dentro de la aplicación. Las notificaciones al teléfono llegan con la PWA en la fase 8.
 - Todas las reglas las hace cumplir la base de datos (funciones con permisos), no solo la pantalla.
 
+## Conteos y totales
+Menú **Conteos** (líder de sede, cabeza, administrador, coordinadores y supervisores). Los grupos cuentan a las personas en cada entrada de la sede; al terminar el servicio se registra cuántas entraron en cada ubicación y la aplicación lo contrasta con la capacidad.
+
+- **Capacidad y guías** (Conteos → Capacidad y guías de conteo; líder de su sede, cabeza y administrador): el total de **sillas de cada ubicación** (una cifra para todos los servicios; vacía si esa ubicación no se cuenta) y, por **día de la semana**, una **imagen** que indica cómo y dónde contar en cada entrada. La imagen se repite cada semana hasta que se reemplace o se quite y aplica a todos los horarios de ese día. Las **entradas no se registran**: la imagen es la guía.
+- **Guía en el servicio:** la ve en la página del servicio el grupo que sirve ese día (y quienes apoyan), el líder, la cabeza y el administrador. Se guarda en un almacenamiento privado, con enlaces firmados.
+- **Captura:** en la página del servicio, el **coordinador o un supervisor del grupo que sirvió** registra **un total final por ubicación**. El total **no puede superar la capacidad** (la pantalla avisa y la base de datos lo rechaza); una ubicación sin capacidad no se puede contar. Se guarda todo o nada. Solo se puede desde el día del servicio y hasta el **final del día siguiente** (24 horas); después **solo corrige el líder** (o el administrador). Todo cambio queda registrado (quién, cuándo, valor anterior y nuevo) y lo ve el líder, la cabeza y el administrador.
+- **Recordatorio:** si faltan los conteos de un servicio reciente, Mi servicio se lo recuerda al coordinador y a los supervisores del grupo.
+- **Reporte** (solo en pantalla): por **servicio**, por **día** y por **semana de lunes a domingo**, con los totales por ubicación, capacidad y porcentaje de ocupación (calculado sobre las ubicaciones que sí se contaron), y una comparación con la semana anterior. El líder ve su sede; la cabeza y el administrador, todas, con el total consolidado; coordinadores y supervisores ven **solo los servicios de su grupo**. Los voluntarios no ven los totales.
+- Los totales no son datos personales; si la persona que contó se elimina, se conservan sin su nombre.
+
 ## Asistente (chat IA)
 Pantalla **Asistente** (menú superior), para cualquier persona con cuenta. Responde dudas con lo que está cargado: posiciones del manual, flujos y novedades vigentes.
 
@@ -137,4 +147,4 @@ Cada fase nueva trae migraciones. El orden seguro es:
 1. Publica primero el código nuevo (fusiona el pull request y espera el despliegue de Vercel).
 2. Luego aplica las migraciones: `npx supabase db push`.
 
-Notas por fase: la `20261019000001_people.sql` quita el correo de `profiles` y lo mueve a `profile_private`; la `20261020000001_announcements.sql` crea los anuncios (hasta aplicarla, el inicio muestra «No hay anuncios por ahora»); la `20261021000001_rotation.sql` crea la rotación, la planeación y el bucket privado `schedules` (hasta aplicarla, Mi servicio y Rotación no funcionan); la `20261022000001_chat.sql` crea la búsqueda y el límite diario del asistente; la `20261023000001_privacy.sql` crea la constancia de aceptación y la baja de cuenta (es aditiva: hasta aplicarla, la aplicación no pide aceptar los textos); la `20261025000001_support.sql` crea las ausencias, los apoyos y las solicitudes (aditiva; hasta aplicarla, Mi servicio funciona igual y simplemente no hay solicitudes); la `20261024000001_minimal_data.sql` deja de guardar la foto de Google y borra las ya guardadas (publica primero el código nuevo, que ya no la pide, y luego aplica esta migración).
+Notas por fase: la `20261019000001_people.sql` quita el correo de `profiles` y lo mueve a `profile_private`; la `20261020000001_announcements.sql` crea los anuncios (hasta aplicarla, el inicio muestra «No hay anuncios por ahora»); la `20261021000001_rotation.sql` crea la rotación, la planeación y el bucket privado `schedules` (hasta aplicarla, Mi servicio y Rotación no funcionan); la `20261022000001_chat.sql` crea la búsqueda y el límite diario del asistente; la `20261023000001_privacy.sql` crea la constancia de aceptación y la baja de cuenta (es aditiva: hasta aplicarla, la aplicación no pide aceptar los textos); la `20261025000001_support.sql` crea las ausencias, los apoyos y las solicitudes (aditiva; hasta aplicarla, Mi servicio funciona igual y simplemente no hay solicitudes); la `20261026000001_counts.sql` agrega la capacidad de las ubicaciones, las guías de conteo (bucket privado `counts`) y los totales (aditiva: hasta aplicarla, el menú Conteos no tiene datos); la `20261024000001_minimal_data.sql` deja de guardar la foto de Google y borra las ya guardadas (publica primero el código nuevo, que ya no la pide, y luego aplica esta migración).

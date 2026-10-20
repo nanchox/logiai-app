@@ -137,7 +137,7 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 
 ## 8. Fases
 
-**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ✅ Fase 4 · ✅ Fase 5 · ✅ Fase 6 · ✅ Fase 7 · ⬜ Fase 8 · ⬜ Fase 9
+**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ✅ Fase 4 · ✅ Fase 5 · ✅ Fase 6 · ✅ Fase 7 · ✅ Fase 8 · ⬜ Fase 9
 
 1. **Base:** proyecto Next.js, esquema y RLS, login con Google y hook de lista blanca, roles, tema claro/oscuro, carga inicial (sedes, locations, admin, cabeza), importación del prototipo actual (mapa y zonas 1 a 6 de Castellana, Auditorio principal).
 2. **Manual (núcleo):** visor de mapas y pines, fichas de posición con fotos y YouTube, editor de pines, carga y reemplazo de mapas, posiciones por día y franja, flujos.
@@ -179,7 +179,7 @@ Cuando en un servicio planeado faltan personas, el grupo busca apoyo en otros gr
 
 **Avisos:** dentro de la aplicación en esta fase. Las notificaciones al teléfono llegan en la fase 8, con la PWA.
 
-## 8.3 Fase 8 · Conteos y totales
+## 8.3 Fase 8 · Conteos y totales (hecha)
 Los grupos cuentan a las personas que entran por cada entrada de la sede; al terminar el servicio, el coordinador o un supervisor registra cuántas entraron en cada ubicación y la aplicación lo contrasta con la capacidad.
 
 **Capacidad (previa)**
