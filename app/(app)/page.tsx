@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { AnnouncementCard } from "@/components/announcements/AnnouncementCard";
 import { loadAnnouncements } from "@/lib/announcements/load";
+import { ActiveBadge } from "@/components/service/ActiveBadge";
 import { SupportRequests } from "@/components/support/SupportRequests";
+import { serviceLabel } from "@/lib/labels";
+import { loadActiveServices } from "@/lib/service/load-active";
 import { formatServiceDate, todayCo } from "@/lib/service/dates";
 import { loadOpenRequests } from "@/lib/support/load";
 import { loadEvents } from "@/lib/service/load";
@@ -18,6 +21,17 @@ export default async function HomePage() {
     ? (await loadEvents(supabase, { from: todayCo(), groupId: user.membership.groupId, limit: 6 })).find((e) => e.status === "programado")
     : undefined;
 
+  // Coordinadores, supervisores, líderes de sede, cabeza y administrador: atajos a su servicio activo, los conteos y el manual de su sede.
+  const shortcuts = user.isAdmin || user.isHead || user.leaderSites.length > 0 || (!!user.membership && ["coordinador", "supervisor"].includes(user.membership.role));
+  const active = shortcuts ? (await loadActiveServices(supabase, user, todayCo())).slice(0, 3) : [];
+  const manuals = user.isAdmin || user.isHead
+    ? [{ href: "/manual", label: "Manual de logística", hint: "Todas las sedes" }]
+    : user.leaderSites.length
+      ? user.leaderSites.map((s) => ({ href: `/manual/${s.slug}`, label: `Manual de ${s.name}`, hint: "Mapas, posiciones y flujos" }))
+      : user.membership
+        ? [{ href: `/manual/${user.membership.site.slug}`, label: `Manual de ${user.membership.site.name}`, hint: "Mapas, posiciones y flujos" }]
+        : [];
+
   const scope = user.isAdmin || user.isHead
     ? "Todas las sedes"
     : user.leaderSites.length
@@ -33,6 +47,45 @@ export default async function HomePage() {
           {scope}
         </p>
       </div>
+
+      {shortcuts && (
+        <section aria-label="Atajos" className="space-y-3">
+          <div className="space-y-3" aria-label="Servicio activo">
+            <h2 className="text-lg font-extrabold">Tu servicio activo</h2>
+            {active.length === 0 ? (
+              <p className="rounded-2xl border border-line bg-surface p-4 text-muted">No hay un servicio activo ahora. <Link href="/servicio" className="font-semibold">Ver Mi servicio →</Link></p>
+            ) : (
+              <ul className="space-y-2">
+                {active.map((a) => (
+                  <li key={a.eventId}>
+                    <Link href={`/servicio/${a.eventId}`} className="block rounded-2xl border-2 border-accent bg-surface p-4 no-underline hover:brightness-105">
+                      <span className="flex flex-wrap items-center gap-2"><ActiveBadge today={a.isToday} />{a.kind === "apoyo" && <span className="rounded-full bg-info px-2 py-0.5 text-xs font-bold text-on-info">Apoyo</span>}</span>
+                      <span className="mt-1.5 block text-lg font-bold text-fg">{formatServiceDate(a.date)}</span>
+                      <span className="block text-sm text-muted">{serviceLabel(a.day, a.shift)} · {a.siteName}{a.groupName ? ` · ${a.kind === "apoyo" ? "Apoyo a " : ""}${a.groupName}` : ""}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-label="Accesos rápidos">
+            <Link href="/conteos" className="block rounded-2xl border border-line bg-surface p-4 no-underline hover:border-primary">
+              <span className="text-lg font-bold text-fg">Conteos</span>
+              <span className="mt-1 block text-sm text-muted">Registrar y revisar cuántas personas entraron.</span>
+            </Link>
+            {manuals.map((m) => (
+              <Link key={m.href} href={m.href} className="block rounded-2xl border border-line bg-surface p-4 no-underline hover:border-primary">
+                <span className="text-lg font-bold text-fg">{m.label}</span>
+                <span className="mt-1 block text-sm text-muted">{m.hint}</span>
+              </Link>
+            ))}
+            <Link href="/servicio" className="block rounded-2xl border border-line bg-surface p-4 no-underline hover:border-primary">
+              <span className="text-lg font-bold text-fg">Mi servicio</span>
+              <span className="mt-1 block text-sm text-muted">Servicios activos, apoyos y posiciones.</span>
+            </Link>
+          </div>
+        </section>
+      )}
 
       {user.membership ? (
         <section className="rounded-2xl border border-line bg-surface p-5">
