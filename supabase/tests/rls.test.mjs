@@ -1648,3 +1648,40 @@ test('fase 9 · a quién se avisa: solicitud de apoyo (puede apoyar, con disposi
   assert.equal(await count('push_subscriptions', `user_id = '${U.vR4}'`), 0);
   assert.equal(await count('notification_log', `user_id = '${U.vR4}'`), 0);
 });
+
+test('novedades · imágenes: máximo 4, en la carpeta de su novedad, visibles solo para quien ve la novedad; el bucket limita a 1 MB', async () => {
+  assert.equal((await one(`select file_size_limit from storage.buckets where id = 'announcements'`)).file_size_limit, 1048576);
+  const id = (await ann(U.coord1, 'con-imagenes', { group: U.gCas1 })).rows[0].id;
+  const img = (uid, path, aid = id) => as(uid, () => db.query(`insert into public.announcement_images (announcement_id, image_path) values ($1, $2)`, [aid, path]));
+  const obj = (uid, path) => as(uid, () => db.query(`insert into storage.objects (bucket_id, name) values ('announcements', $1)`, [path]));
+
+  await obj(U.coord1, `${id}/a.jpg`);
+  await img(U.coord1, `${id}/a.jpg`);
+  await denied(() => obj(U.vol1, `${id}/b.jpg`), /row-level security/);            // quien no administra no sube
+  await denied(() => obj(U.liderNogal2, `${id}/b.jpg`), /row-level security/);     // ni el líder de otra sede
+  await denied(() => obj(U.coord1, `${U.admin}/b.jpg`), /row-level security/);     // carpeta que no es de una novedad suya
+  await denied(() => img(U.vol1, `${id}/b.jpg`), /row-level security/);
+  await denied(() => img(U.coord1, `otra/b.jpg`), /carpeta/);                       // ruta fuera de la carpeta de la novedad
+  await denied(() => img(U.coord1, `${id}/a.jpg`), /unique|duplicate/);
+  await img(U.coord1, `${id}/c.jpg`); await img(U.coord1, `${id}/d.jpg`); await img(U.liderCas, `${id}/e.jpg`);
+  await denied(() => img(U.coord1, `${id}/f.jpg`), /Máximo 4/);
+
+  // Quién ve las imágenes y sus archivos: quien ve la novedad
+  const seen = (uid) => as(uid, async () => ({
+    rows: Number((await one(`select count(*) from public.announcement_images`)).count),
+    files: (await rows(`select name from storage.objects where bucket_id = 'announcements'`)).length,
+  }));
+  assert.deepEqual(await seen(U.vol1), { rows: 4, files: 1 });
+  assert.deepEqual(await seen(U.volSuba), { rows: 0, files: 0 });
+  // Quien administra sigue viendo (y puede borrar) el archivo de una imagen cuya fila ya no existe
+  await db.exec(`insert into storage.objects (bucket_id, name) values ('announcements', '${id}/huerfano.jpg')`);
+  assert.equal(await as(U.vol1, async () => (await rows(`select name from storage.objects where name like '%huerfano%'`)).length), 0);
+  assert.equal(await as(U.coord1, async () => (await rows(`select name from storage.objects where name like '%huerfano%'`)).length), 1);
+  await db.exec(`delete from storage.objects where name like '%huerfano%'`);
+  // Solo quien administra las quita; si se elimina la novedad se van sus imágenes
+  assert.equal(await as(U.vol1, async () => (await db.query(`delete from public.announcement_images where announcement_id = $1`, [id])).affectedRows), 0);
+  assert.equal(await as(U.coord1, async () => (await db.query(`delete from public.announcement_images where image_path = $1`, [`${id}/c.jpg`])).affectedRows), 1);
+  await as(U.coord1, () => db.query(`delete from storage.objects where bucket_id = 'announcements' and name = $1`, [`${id}/a.jpg`]));
+  await as(U.coord1, () => db.query(`delete from public.announcements where id = $1`, [id]));
+  assert.equal(await count('announcement_images'), 0);
+});

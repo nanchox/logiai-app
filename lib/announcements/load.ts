@@ -8,6 +8,7 @@ type Row = {
   sites: { name: string } | null;
   groups: { name: string; service_slots: { day: string; shift: string } } | null;
   announcement_links: { id: string; label: string; url: string; sort: number }[];
+  announcement_images: { id: string; image_path: string; sort: number }[];
 };
 
 /** Novedades que el usuario puede ver (la base de datos filtra por alcance y vigencia), fijados primero y luego los más recientes. */
@@ -16,14 +17,19 @@ export async function loadAnnouncements(supabase: SupabaseClient, limit = 100): 
     .from("announcements")
     .select(
       "id, title, body, category, site_id, day, group_id, pinned, starts_at, ends_at, created_at, author_name, author_role, " +
-      "sites(name), groups(name, service_slots(day, shift)), announcement_links(id, label, url, sort)",
+      "sites(name), groups(name, service_slots(day, shift)), announcement_links(id, label, url, sort), announcement_images(id, image_path, sort)",
     )
     .order("pinned", { ascending: false })
     .order("starts_at", { ascending: false })
     .limit(limit);
 
+  const rows = (data ?? []) as unknown as Row[];
+  const paths = rows.flatMap((r) => r.announcement_images.map((i) => i.image_path));
+  const signed = paths.length ? await supabase.storage.from("announcements").createSignedUrls(paths, 3600) : { data: [] };
+  const urlOf = new Map((signed.data ?? []).map((u) => [u.path, u.signedUrl]));
+
   const now = Date.now();
-  return ((data ?? []) as unknown as Row[]).map((r) => {
+  return rows.map((r) => {
     const status: Status = new Date(r.starts_at).getTime() > now ? "scheduled" : r.ends_at && new Date(r.ends_at).getTime() <= now ? "expired" : "active";
     return {
       id: r.id, title: r.title, body: r.body, category: r.category,
@@ -32,6 +38,10 @@ export async function loadAnnouncements(supabase: SupabaseClient, limit = 100): 
       pinned: r.pinned, startsAt: r.starts_at, endsAt: r.ends_at, createdAt: r.created_at,
       authorName: r.author_name, authorRole: r.author_role,
       links: [...r.announcement_links].sort((a, b) => a.sort - b.sort).map(({ id, label, url }) => ({ id, label, url })),
+      images: [...r.announcement_images].sort((a, b) => a.sort - b.sort).flatMap((i) => {
+        const url = urlOf.get(i.image_path);
+        return url ? [{ id: i.id, path: i.image_path, url }] : [];
+      }),
       status,
     };
   });

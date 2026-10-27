@@ -11,6 +11,7 @@ export type Scope = { kind: ScopeKind; siteId: string | null; day: string | null
 export type Status = "active" | "scheduled" | "expired";
 
 export type AnnouncementLink = { id: string; label: string; url: string };
+export type AnnouncementImage = { id: string; path: string; url: string };
 export type AnnouncementItem = {
   id: string;
   title: string;
@@ -29,6 +30,7 @@ export type AnnouncementItem = {
   authorName: string | null;
   authorRole: string | null;
   links: AnnouncementLink[];
+  images: AnnouncementImage[];
   status: Status;
 };
 
