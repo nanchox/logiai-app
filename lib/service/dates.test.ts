@@ -20,3 +20,11 @@ test("valida fechas de calendario", () => {
   assert.ok(!isDate("30/02/2030"));
   assert.ok(!isDate(""));
 });
+
+test("la semana va de lunes a domingo", async () => {
+  const { mondayOf } = await import("./dates");
+  assert.equal(mondayOf("2030-01-14"), "2030-01-14");   // lunes
+  assert.equal(mondayOf("2030-01-13"), "2030-01-07");   // domingo → lunes anterior
+  assert.equal(mondayOf("2030-01-09"), "2030-01-07");   // miércoles
+  assert.equal(mondayOf("2031-01-01"), "2030-12-30");   // cruza el año
+});

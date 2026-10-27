@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { ChatDock, ChatShell, ChatToggle } from "@/components/chat/ChatDock";
+import { ChatProvider } from "@/components/chat/ChatProvider";
 import { requireUser } from "@/lib/auth";
 import { loadOpenRequests } from "@/lib/support/load";
 import { createClient } from "@/lib/supabase/server";
@@ -14,7 +16,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const pending = (await loadOpenRequests(await createClient())).filter((r) => r.myStatus === null).length;
 
   return (
-    <>
+    <ChatProvider configured={!!process.env.OPENROUTER_API_KEY} limit={Number(process.env.CHAT_DAILY_LIMIT) || 30}>
       <header className="sticky top-0 z-30 bg-header text-on-header shadow">
         {/* En móvil: arriba el logo y los botones; debajo los enlaces, con desplazamiento si no caben. */}
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5">
@@ -24,7 +26,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link href="/novedades" className={navLink}>Novedades</Link>
             <Link href="/manual" className={navLink}>Manual</Link>
             <Link href="/servicio" className={navLink}>Mi servicio{pending > 0 && <span aria-label={`${pending} solicitudes de apoyo`} className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-xs font-extrabold text-on-accent">{pending}</span>}</Link>
-            <Link href="/asistente" className={navLink}>Asistente</Link>
+            {(user.isAdmin || user.isHead || user.leaderSites.length > 0 || (!!user.membership && ["coordinador", "supervisor"].includes(user.membership.role))) && <Link href="/conteos" className={navLink}>Conteos</Link>}
+            <ChatToggle className={navLink} />
             {user.membership && <Link href="/grupo" className={navLink}>Mi grupo</Link>}
             {user.canManagePeople && <Link href="/personas" className={navLink}>Personas</Link>}
             <Link href="/perfil" className={`${navLink} sm:hidden`}>Perfil</Link>
@@ -41,7 +44,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </header>
-      <div className="mx-auto w-full max-w-6xl px-4 py-6">{children}</div>
-    </>
+      <ChatShell>
+        <div className="mx-auto w-full max-w-6xl px-4 py-6">{children}</div>
+      </ChatShell>
+      <ChatDock />
+    </ChatProvider>
   );
 }

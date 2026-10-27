@@ -137,7 +137,7 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 
 ## 8. Fases
 
-**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ✅ Fase 4 · ✅ Fase 5 · ✅ Fase 6 · ✅ Fase 7 · ⬜ Fase 8
+**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ✅ Fase 4 · ✅ Fase 5 · ✅ Fase 6 · ✅ Fase 7 · ✅ Fase 8 · ✅ Fase 9 · ⬜ Publicación ampliada
 
 1. **Base:** proyecto Next.js, esquema y RLS, login con Google y hook de lista blanca, roles, tema claro/oscuro, carga inicial (sedes, locations, admin, cabeza), importación del prototipo actual (mapa y zonas 1 a 6 de Castellana, Auditorio principal).
 2. **Manual (núcleo):** visor de mapas y pines, fichas de posición con fotos y YouTube, editor de pines, carga y reemplazo de mapas, posiciones por día y franja, flujos.
@@ -146,7 +146,9 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 5. **Rotación y servicio:** rotación por horario y sede, cancelaciones que consumen el turno, servicios especiales, calendario, programación en PDF, Excel o imagen, planeación de posiciones con borrador y publicación, historial por persona.
 6. **Chat IA:** búsqueda de texto completo en español bajo los permisos de la persona, modelo gratuito de OpenRouter (varios IDs con respaldo), enlaces a las fuentes, límite diario por persona.
 7. **Reemplazos y apoyos:** ausencias, apoyos de personas de otros grupos (directos o por solicitud con postulación) para el próximo servicio del grupo. Detalle en 8.2.
-8. **Lanzamiento ampliado:** PWA instalable (con avisos al teléfono de las solicitudes de apoyo), ajustes, Supabase Pro, publicación a unas 2000 personas.
+8. **Conteos y totales:** guía de conteo (imagen) por sede y día de la semana, capacidad por ubicación, captura del total final por servicio y reporte semanal. Detalle en 8.3.
+9. **Aplicación instalable y avisos (hecha):** PWA instalable, pantalla sin conexión, avisos al teléfono de las solicitudes de apoyo y de los conteos pendientes, y ajustes en Perfil. Detalle en el README.
+10. **Publicación ampliada (pendiente):** Supabase Pro, sacar el consentimiento de Google del modo «Testing» y publicar a unas 2000 personas.
 
 ## 8.1 Protección de datos (Ley 1581 de 2012)
 Aceptación obligatoria de la política de datos y los términos al primer ingreso (con constancia por versión), página Perfil (ver, rectificar, descargar y eliminar la cuenta) y política y términos públicos. Detalle en el README.
@@ -177,6 +179,27 @@ Cuando en un servicio planeado faltan personas, el grupo busca apoyo en otros gr
 - El **coordinador de su grupo de origen** se entera (ve qué personas de su grupo apoyan a otros y cuándo), pero no tiene que aprobar.
 
 **Avisos:** dentro de la aplicación en esta fase. Las notificaciones al teléfono llegan en la fase 8, con la PWA.
+
+## 8.3 Fase 8 · Conteos y totales (hecha)
+Los grupos cuentan a las personas que entran por cada entrada de la sede; al terminar el servicio, el coordinador o un supervisor registra cuántas entraron en cada ubicación y la aplicación lo contrasta con la capacidad.
+
+**Capacidad (previa)**
+- Cada ubicación de la sede (auditorio, teatro, overflow, salones…) tiene un **total de sillas**: una sola cifra, igual para todos los servicios. La registra el **líder de la sede** o el **administrador** (junto a los datos de la ubicación, en el Manual).
+
+**Guía de conteo (imagen)**
+- El **líder** (de su sede) o el **administrador** cargan una **imagen** que indica cómo y dónde contar en cada entrada. Es **por sede y por día de la semana** (miércoles, sábado o domingo) y **se repite cada semana** hasta que se reemplace o se quite. Aplica a todos los horarios de ese día.
+- La ven el grupo que sirve ese día en la página de su servicio, y el líder, la cabeza y el administrador. **Las entradas no se registran**: la imagen es la que dice qué contar en cada una.
+
+**Captura del total**
+- Al terminar el servicio, el **coordinador o un supervisor del grupo que sirvió** ingresa **un total final por ubicación** (no hay varios momentos ni división por edades).
+- **Validación:** el total no puede superar la capacidad de la ubicación; la base de datos lo rechaza. Se muestra la capacidad y el porcentaje de ocupación. Solo se captura desde el día del servicio.
+- **Plazo:** quien captura puede editar hasta **24 horas después** del servicio; pasado ese plazo **solo corrige el líder** de la sede (o el administrador), y queda registrado quién cambió qué y cuándo.
+- Si falta capturar, aparece un **recordatorio en Mi servicio** (los avisos al teléfono llegan con la PWA).
+
+**Reporte (solo en pantalla, sin descargas)**
+- Por **servicio**, por **día** (todos sus horarios) y por **semana completa de lunes a domingo**, con el total por ubicación, el total de la sede, la capacidad y el porcentaje de ocupación, y una comparación sencilla con la semana anterior.
+- **Quién lo ve:** el líder de su sede, la cabeza y el administrador (todas las sedes, con totales consolidados). Los coordinadores y supervisores ven **solo los conteos de sus servicios**.
+- Todas las reglas las hace cumplir la base de datos, no solo la pantalla.
 
 ## 9. Lo que se necesita crear (cuenta del ministerio o del admin)
 1. Proyecto en Supabase. Se toman las variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY`.

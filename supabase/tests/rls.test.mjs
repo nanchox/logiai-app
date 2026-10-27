@@ -358,7 +358,12 @@ test('endurecimiento · ninguna función de public es ejecutable por anon o PUBL
   for (const f of fns) {
     assert.equal(f.anon_ok, false, `${f.proname}: la ejecuta anon`);
     assert.equal(f.public_ok, false, `${f.proname}: la ejecuta PUBLIC`);
-    if (f.proname === 'hook_before_user_created' || f.is_trigger) assert.equal(f.auth_ok, false, `${f.proname}: no debe ejecutarla authenticated`);
+    // Funciones que solo ejecuta el servidor (service_role): ninguna persona, ni con sesión.
+    const SERVER_ONLY = ['support_request_audience', 'pending_counts_audience', 'claim_notification'];
+    if (SERVER_ONLY.includes(f.proname)) {
+      assert.equal(f.auth_ok, false, `${f.proname}: solo el servidor la ejecuta`);
+      assert.equal((await one(`select has_function_privilege('service_role', $1::regproc, 'execute') ok`, [f.proname])).ok, true, `${f.proname}: el servidor sí`);
+    } else if (f.proname === 'hook_before_user_created' || f.is_trigger) assert.equal(f.auth_ok, false, `${f.proname}: no debe ejecutarla authenticated`);
     else assert.equal(f.auth_ok, true, `${f.proname}: authenticated la necesita para las políticas RLS`);
     assert.ok(Number(f.sp) >= 1, `${f.proname}: sin search_path fijo`);
   }
@@ -1388,4 +1393,258 @@ test('fase 7 · el grupo de origen se entera; nadie escribe directo en las tabla
   assert.equal(await count('service_supporters', `user_id = '${U.sR3}'`), 1);
   await as(U.sR3, () => db.query(`select public.delete_my_account()`));
   assert.equal(await count('service_supporters', `user_id = '${U.sR3}'`), 0, 'al darse de baja, todo se va con la cuenta');
+});
+
+// ───────────── Fase 8 · Conteos y totales (Campestre) ─────────────
+const saveCounts = (uid, ev, arr) => rpc(uid, `select public.save_counts($1, $2::jsonb)`, [ev, JSON.stringify(arr)]);
+const totalsOf = async (ev) => Object.fromEntries((await rows(`select l.name, c.total from public.service_counts c join public.locations l on l.id = c.location_id where c.event_id = $1 order by l.name`, [ev])).map((r) => [r.name, r.total]));
+
+test('fase 8 · capacidad: la fija el líder de la sede; no puede quedar por debajo de un conteo registrado', async () => {
+  const locs = await rows(`select id, name from public.locations where site_id = $1 order by sort, name`, [U.sCamp]);
+  U.locA = locs[0].id; U.locB = locs[1].id; U.locNameA = locs[0].name; U.locNameB = locs[1].name;
+  U.locCas = (await one(`select id from public.locations where site_id = $1 order by sort limit 1`, [U.sCas])).id;
+  const cap = (uid, loc, n) => as(uid, async () => (await db.query(`update public.locations set capacity = $2 where id = $1`, [loc, n])).affectedRows);
+  assert.equal(await cap(U.liderCamp, U.locA, 500), 1);
+  assert.equal(await cap(U.admin, U.locB, 120), 1);
+  assert.equal(await cap(U.vR1, U.locA, 1), 0, 'un voluntario no cambia la capacidad');
+  assert.equal(await cap(U.cR1, U.locA, 1), 0, 'ni un coordinador');
+  assert.equal(await cap(U.liderNogal2, U.locA, 1), 0, 'ni el líder de otra sede');
+  await denied(() => cap(U.liderCamp, U.locA, -1), /check/);
+  await denied(() => cap(U.liderCamp, U.locA, 100001), /check/);
+  assert.equal((await one(`select capacity from public.locations where id = $1`, [U.locA])).capacity, 500);
+  assert.equal(await cap(U.admin, U.locCas, 800), 1);
+});
+
+test('fase 8 · guía de conteo: una por sede y día; la ven quienes sirven ese día y los líderes; solo el líder la carga', async () => {
+  const put = (uid, site, day, path) => as(uid, () => db.query(`insert into public.count_guides (site_id, day, image_path) values ($1, $2, $3) on conflict (site_id, day) do update set image_path = excluded.image_path`, [site, day, path]));
+  await put(U.liderCamp, U.sCamp, 'domingo', 'campestre/domingo/g1.png');
+  await put(U.liderCamp, U.sCamp, 'domingo', 'campestre/domingo/g2.png');      // reemplazar
+  await put(U.admin, U.sCamp, 'sabado', 'campestre/sabado/g1.png');
+  await denied(() => put(U.cR1, U.sCamp, 'miercoles', 'campestre/miercoles/x.png'), /row-level security/);
+  await denied(() => put(U.liderNogal2, U.sCamp, 'miercoles', 'campestre/miercoles/x.png'), /row-level security/);
+  await denied(() => put(U.liderCamp, U.sCas, 'domingo', 'castellana/domingo/x.png'), /row-level security/);
+  assert.equal(await count('count_guides', `site_id = '${U.sCamp}'`), 2, 'una por sede y día');
+  // Quién ve cada una: el grupo R1 sirve el domingo de Campestre; nadie de él sirve el sábado
+  const seen = async (uid) => (await as(uid, () => rows(`select day from public.count_guides where site_id = $1 order by day`, [U.sCamp]))).map((r) => r.day);
+  assert.deepEqual(await seen(U.vR1), ['domingo'], 'el grupo que sirve ese día');
+  assert.deepEqual(await seen(U.cR1), ['domingo']);
+  assert.deepEqual(await seen(U.liderCamp), ['sabado', 'domingo']);
+  assert.deepEqual(await seen(U.admin), ['sabado', 'domingo']);
+  assert.deepEqual(await seen(U.cabeza), ['sabado', 'domingo']);
+  assert.deepEqual(await seen(U.vol1), [], 'otra sede');
+  assert.deepEqual(await seen(U.liderNogal2), []);
+  assert.deepEqual(await seen(U.vX), ['domingo'], 'quien sirve ese día en otro horario de la sede también');
+  // Storage
+  const obj = (uid, path) => as(uid, () => db.query(`insert into storage.objects (bucket_id, name) values ('counts', $1)`, [path]));
+  await obj(U.liderCamp, 'campestre/domingo/g2.png');
+  await denied(() => obj(U.cR1, 'campestre/domingo/y.png'), /row-level security/);
+  await denied(() => obj(U.liderNogal2, 'campestre/domingo/y.png'), /row-level security/);
+  await denied(() => obj(U.liderCamp, 'castellana/domingo/y.png'), /row-level security/);
+  const vis = (uid) => as(uid, async () => (await one(`select count(*)::int n from storage.objects where bucket_id = 'counts'`)).n);
+  assert.equal(await vis(U.vR1), 1);
+  assert.equal(await vis(U.vol1), 0);
+  assert.equal(await vis(U.liderNogal2), 0);
+  assert.equal((await one(`select public from storage.buckets where id = 'counts'`)).public, false);
+});
+
+test('fase 8 · captura: quién, cuándo (desde el día; plazo de 24 horas), validación contra la capacidad, todo o nada', async () => {
+  const mk = async (offset) => (await one(`insert into public.service_events (slot_id, service_date, group_id, kind, turn) values ($1, public.today_co() + $2::int, $3, 'rotacion', 0) returning id`, [U.slotCamp, offset, U.gR1])).id;
+  U.evToday = await mk(0); U.evYest = await mk(-1); U.evOld = await mk(-2); U.evFut = await mk(1);
+  const ok = [{ location_id: U.locA, total: 300 }, { location_id: U.locB, total: 100 }];
+
+  // Quién
+  await denied(() => saveCounts(U.vR1, U.evToday, ok), /No puedes registrar/);                 // un voluntario no
+  await denied(() => saveCounts(U.cR2, U.evToday, ok), /No puedes registrar/);                 // coordinador de otro grupo
+  await denied(() => saveCounts(U.liderNogal2, U.evToday, ok), /No puedes registrar/);
+  await denied(() => saveCounts(U.vol1, U.evToday, ok), /No puedes registrar/);
+  await saveCounts(U.sR1, U.evToday, ok);                                                       // un supervisor del grupo sí
+  assert.deepEqual(await totalsOf(U.evToday), { [U.locNameA]: 300, [U.locNameB]: 100 });
+  // Cuándo
+  await denied(() => saveCounts(U.cR1, U.evFut, ok), /No puedes registrar/, 'antes del día del servicio no');
+  await denied(() => saveCounts(U.liderCamp, U.evFut, ok), /No puedes registrar/);
+  await saveCounts(U.cR1, U.evYest, ok);                                                        // ayer: dentro del plazo
+  await denied(() => saveCounts(U.cR1, U.evOld, ok), /No puedes registrar/, 'pasadas las 24 horas, el coordinador ya no');
+  await denied(() => saveCounts(U.sR1, U.evOld, ok), /No puedes registrar/);
+  await saveCounts(U.liderCamp, U.evOld, ok);                                                   // el líder sí
+  await saveCounts(U.admin, U.evOld, [{ location_id: U.locA, total: 310 }]);                    // y el administrador
+  assert.equal((await totalsOf(U.evOld))[U.locNameA], 310);
+
+  // Validación contra la capacidad (500 y 120): nunca se supera
+  await denied(() => saveCounts(U.cR1, U.evToday, [{ location_id: U.locB, total: 121 }]), /no puede superar su capacidad \(120\)/);
+  await saveCounts(U.cR1, U.evToday, [{ location_id: U.locB, total: 120 }]);                    // el límite exacto se permite
+  await denied(() => saveCounts(U.cR1, U.evToday, [{ location_id: U.locA, total: -1 }]), /número entero/);
+  await denied(() => saveCounts(U.cR1, U.evToday, [{ location_id: U.locA, total: 1.5 }]), /número entero/);
+  await denied(() => saveCounts(U.cR1, U.evToday, [{ location_id: U.locA, total: '12' }]), /número entero/);
+  await denied(() => saveCounts(U.cR1, U.evToday, [{ location_id: 'no-es-uuid', total: 1 }]), /no son válidos/);
+  await denied(() => saveCounts(U.cR1, U.evToday, { location_id: U.locA, total: 1 }), /no son válidos/);
+  await denied(() => saveCounts(U.cR1, U.evToday, [{ location_id: U.locCas, total: 1 }]), /no es de la sede/, 'ubicación de otra sede');
+  // Una ubicación sin capacidad registrada no admite conteo
+  const locC = (await one(`insert into public.locations (site_id, name, kind) values ($1, 'Salón sin capacidad', 'salon') returning id`, [U.sCamp])).id;
+  await denied(() => saveCounts(U.cR1, U.evToday, [{ location_id: locC, total: 5 }]), /no tiene su capacidad registrada/);
+  // Todo o nada
+  await denied(() => saveCounts(U.cR1, U.evToday, [{ location_id: U.locA, total: 1 }, { location_id: U.locB, total: 999 }]), /no puede superar/);
+  assert.equal((await totalsOf(U.evToday))[U.locNameA], 300, 'si uno falla, no se guarda ninguno');
+  // Parcial, y un total nulo lo borra
+  await saveCounts(U.cR1, U.evToday, [{ location_id: U.locA, total: 280 }]);
+  assert.deepEqual(await totalsOf(U.evToday), { [U.locNameA]: 280, [U.locNameB]: 120 });
+  await saveCounts(U.cR1, U.evToday, [{ location_id: U.locB, total: null }]);
+  assert.deepEqual(await totalsOf(U.evToday), { [U.locNameA]: 280 });
+  // Un servicio cancelado o sin grupo no tiene conteos
+  const canc = (await one(`insert into public.service_events (slot_id, service_date, group_id, kind, turn) values ($1, public.today_co() - 5, $2, 'rotacion', 0) returning id`, [U.slotCamp, U.gR1])).id;
+  await db.query(`insert into public.service_cancellations (service_date, site_id, slot_id) values (public.today_co() - 5, $1, $2)`, [U.sCamp, U.slotCamp]);
+  await denied(() => saveCounts(U.liderCamp, canc, ok), /No puedes registrar/);
+  // Restricciones directas de la tabla
+  await denied(() => as(U.liderCamp, () => db.query(`insert into public.service_counts (event_id, location_id, total) values ($1, $2, 1)`, [U.evToday, U.locA])), /permission denied/);
+  await denied(() => as(U.admin, () => db.query(`update public.service_counts set total = 1`)), /permission denied/);
+  await denied(() => as(U.admin, () => db.query(`delete from public.service_counts`)), /permission denied/);
+  // La base de datos también lo impide si se intenta por debajo de las funciones
+  await denied(() => db.query(`update public.service_counts set total = 501 where event_id = $1 and location_id = $2`, [U.evToday, U.locA]), /no puede superar su capacidad/);
+});
+
+test('fase 8 · quién ve los totales y el historial de cambios; la capacidad no baja de lo ya contado', async () => {
+  const mine = (uid) => as(uid, () => count('service_counts'));
+  const total = await count('service_counts');
+  assert.equal(await mine(U.admin), total);
+  assert.equal(await mine(U.cabeza), total);
+  assert.equal(await mine(U.liderCamp), total, 'el líder ve los de su sede');
+  assert.ok(await mine(U.cR1) >= 3, 'el coordinador ve los de su grupo');
+  assert.equal(await mine(U.sR1), await mine(U.cR1), 'y el supervisor también');
+  assert.equal(await mine(U.cR2), 0, 'otro grupo no');
+  assert.equal(await mine(U.vR1), 0, 'un voluntario no ve totales');
+  assert.equal(await mine(U.vol1), 0);
+  assert.equal(await mine(U.liderNogal2), 0, 'el líder de otra sede no');
+  await db.exec(`set role anon`);
+  try { await denied(() => db.query(`select * from public.service_counts`), /permission denied/); } finally { await db.exec(`reset role`); }
+
+  // Historial: quién cambió qué y cuándo (solo líder, cabeza, administrador)
+  const log = await rpc(U.liderCamp, `select * from public.count_log($1)`, [U.evToday]);
+  assert.ok(log.length >= 4);
+  assert.deepEqual(Object.keys(log[0]).sort(), ['changed_at', 'full_name', 'location_name', 'new_total', 'old_total']);
+  assert.ok(log.some((l) => l.old_total === 300 && l.new_total === 280), 'registra el valor anterior y el nuevo');
+  assert.ok(log.some((l) => l.new_total === null && l.old_total === 120), 'y los borrados');
+  assert.ok(log.every((l) => l.full_name), 'con quién lo cambió');
+  await denied(() => rpc(U.cR1, `select * from public.count_log($1)`, [U.evToday]), /No tienes permiso/);
+  await denied(() => rpc(U.liderNogal2, `select * from public.count_log($1)`, [U.evToday]), /No tienes permiso/);
+  assert.equal(await as(U.cR1, () => count('service_count_log')), 0);
+  assert.ok(await as(U.liderCamp, () => count('service_count_log')) >= 4);
+
+  // La capacidad no puede bajar de un conteo ya registrado (sí subir)
+  const maxA = Number((await one(`select max(total)::int m from public.service_counts where location_id = $1`, [U.locA])).m);
+  assert.ok(maxA > 0);
+  await denied(() => as(U.liderCamp, () => db.query(`update public.locations set capacity = $2 where id = $1`, [U.locA, maxA - 1])), /la capacidad no puede ser menor/);
+  await denied(() => as(U.liderCamp, () => db.query(`update public.locations set capacity = null where id = $1`, [U.locA])), /la capacidad no puede ser menor/);
+  await as(U.liderCamp, () => db.query(`update public.locations set capacity = $2 where id = $1`, [U.locA, maxA]));
+  await as(U.liderCamp, () => db.query(`update public.locations set capacity = 500 where id = $1`, [U.locA]));
+  // Al eliminar el servicio se van sus totales y su historial; al eliminar a quien contó, el total queda sin nombre
+  const before = await count('service_counts');
+  await db.query(`delete from public.service_events where id = $1`, [U.evOld]);
+  assert.ok(await count('service_counts') < before);
+  assert.equal(await count('service_count_log', `event_id = '${U.evOld}'`), 0);
+  await saveCounts(U.sR1, U.evToday, [{ location_id: U.locB, total: 50 }]);
+  await as(U.sR1, () => db.query(`select public.delete_my_account()`));
+  assert.ok(await count('service_counts', `counted_by is null`) >= 1, 'los totales no son datos personales: se conservan sin nombre');
+});
+
+// ───────────── Fase 9 · Avisos al teléfono ─────────────
+const asServer = async (fn) => { await db.exec(`set role service_role`); try { return await fn(); } finally { await db.exec(`reset role`); } };
+const sub = (uid, ep, extra = {}) => rpc(uid, `select public.save_push_subscription($1, $2, $3)`, [ep, extra.p256dh ?? 'BKey', extra.auth ?? 'authKey']);
+
+test('fase 9 · dispositivos: cada quien ve y quita los suyos; un dispositivo pasa a quien inicia sesión; máximo 10', async () => {
+  await sub(U.vR4, 'https://push.example/dev-a');
+  assert.equal(await as(U.vR4, () => count('push_subscriptions')), 1);
+  assert.equal(await as(U.vR5, () => count('push_subscriptions')), 0, 'nadie ve los dispositivos de otro');
+  assert.equal(await as(U.admin, () => count('push_subscriptions')), 0, 'ni el administrador');
+  // El mismo navegador usado por otra persona: el aviso pasa a ella
+  await sub(U.vR5, 'https://push.example/dev-a', { auth: 'otra' });
+  assert.equal(await as(U.vR4, () => count('push_subscriptions')), 0);
+  assert.equal(await as(U.vR5, () => count('push_subscriptions')), 1);
+  assert.equal((await one(`select auth from public.push_subscriptions where endpoint = 'https://push.example/dev-a'`)).auth, 'otra');
+  // Validaciones y permisos
+  await denied(() => sub(U.vR4, 'http://sin-https.example/x'), /check/);
+  await denied(() => sub(U.vR4, 'https://push.example/' + 'x'.repeat(1001)), /check/);
+  await denied(() => sub(U.vR4, 'https://push.example/ok', { p256dh: '' }), /check/);
+  await denied(() => as(U.vR4, () => db.query(`insert into public.push_subscriptions (user_id, endpoint, p256dh, auth) values ($1, 'https://x.example/1', 'a', 'b')`, [U.vR4])), /permission denied/);
+  await denied(() => as(U.vR4, () => db.query(`update public.push_subscriptions set user_id = $1`, [U.vR4])), /permission denied/);
+  await db.exec(`set role anon`);
+  try { await denied(() => db.query(`select public.save_push_subscription('https://a.example/1', 'a', 'b')`), /permission denied/); } finally { await db.exec(`reset role`); }
+  // Quitar: solo los propios
+  await rpc(U.vR4, `select public.remove_push_subscription('https://push.example/dev-a')`);
+  assert.equal(await count('push_subscriptions', `endpoint = 'https://push.example/dev-a'`), 1, 'no quita el de otra persona');
+  assert.equal(await as(U.vR4, async () => (await db.query(`delete from public.push_subscriptions where endpoint = 'https://push.example/dev-a'`)).affectedRows), 0, 'ni borrándolo directamente');
+  assert.equal(await as(U.vR5, async () => (await db.query(`delete from public.push_subscriptions where endpoint = 'https://push.example/dev-a'`)).affectedRows), 1, 'cada quien quita el suyo');
+  // Máximo 10 por persona: se conservan los más recientes
+  for (let i = 1; i <= 12; i++) { await sub(U.vR4, `https://push.example/m${i}`); await db.query(`update public.push_subscriptions set created_at = now() - ($2 || ' seconds')::interval where endpoint = $1`, [`https://push.example/m${i}`, String(20 - i)]); }
+  await sub(U.vR4, 'https://push.example/m13');
+  const keep = (await rows(`select endpoint from public.push_subscriptions where user_id = $1`, [U.vR4])).map((r) => r.endpoint);
+  assert.equal(keep.length, 10);
+  assert.ok(keep.includes('https://push.example/m13') && !keep.includes('https://push.example/m1'), 'se van los más antiguos');
+  await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example/m%'`);
+});
+
+test('fase 9 · preferencias de avisos: cada quien las suyas', async () => {
+  await as(U.vR5, () => db.query(`insert into public.notification_prefs (user_id, support_requests) values ($1, false)`, [U.vR5]));
+  assert.deepEqual(await as(U.vR5, () => one(`select support_requests, pending_counts from public.notification_prefs`)), { support_requests: false, pending_counts: true });
+  await as(U.vR5, () => db.query(`update public.notification_prefs set pending_counts = false where user_id = $1`, [U.vR5]));
+  await denied(() => as(U.vR4, () => db.query(`insert into public.notification_prefs (user_id) values ($1)`, [U.vR5])), /row-level security/);
+  assert.equal(await as(U.vR4, () => count('notification_prefs')), 0, 'nadie ve las de otra persona');
+  assert.equal(await as(U.vR4, async () => (await db.query(`update public.notification_prefs set support_requests = true`)).affectedRows), 0);
+  assert.equal(await as(U.admin, () => count('notification_prefs')), 0);
+  await denied(() => as(U.vR4, () => db.query(`select * from public.notification_log`)), /permission denied/);
+  await db.query(`delete from public.notification_prefs`);
+});
+
+test('fase 9 · a quién se avisa: solicitud de apoyo (puede apoyar, con dispositivo y sin desactivarlo) y conteos pendientes (coordinador o supervisor)', async () => {
+  // — Solicitud de apoyo —
+  await db.query(`update public.support_requests set status = 'cancelada' where event_id = $1`, [U.evToday]);
+  await db.query(`delete from public.service_supporters where event_id = $1`, [U.evToday]);
+  const rq = (await rpc(U.cR1, `select public.create_support_request($1, 2, null, '{}'::uuid[]) id`, [U.evToday]))[0].id;
+  // Elegibles según la regla de apoyo (la misma que usa la solicitud)
+  const eligible = (await rows(`select m.user_id from public.memberships m where m.role in ('voluntario', 'supervisor') and public.can_support_event(m.user_id, $1)`, [U.evToday])).map((r) => r.user_id);
+  assert.ok(eligible.includes(U.vR4) && eligible.includes(U.vR5), 'hay personas elegibles para la prueba');
+  const aud = () => asServer(async () => (await rows(`select * from public.support_request_audience($1)`, [rq])).map((r) => r.user_id));
+  assert.deepEqual(await aud(), [], 'sin dispositivos no hay a quién avisar');
+  await sub(U.vR4, 'https://push.example/r4'); await sub(U.vR5, 'https://push.example/r5'); await sub(U.vR1, 'https://push.example/r1'); await sub(U.cR2, 'https://push.example/c2');
+  assert.deepEqual((await aud()).sort(), [U.vR4, U.vR5].sort(), 'solo quienes pueden apoyar y tienen dispositivo (no su propio grupo ni coordinadores)');
+  const row = (await asServer(() => rows(`select * from public.support_request_audience($1) limit 1`, [rq])))[0];
+  assert.deepEqual(Object.keys(row).sort(), ['filled', 'group_name', 'needed', 'service_date', 'site_name', 'user_id'], 'sin nombres ni correos');
+  assert.equal(row.group_name, 'R1');
+  await db.query(`insert into public.notification_prefs (user_id, support_requests) values ($1, false)`, [U.vR5]);
+  assert.deepEqual(await aud(), [U.vR4], 'quien desactivó este aviso no lo recibe');
+  await db.query(`update public.support_requests set status = 'cancelada' where id = $1`, [rq]);
+  assert.deepEqual(await aud(), [], 'una solicitud cancelada no avisa');
+  await denied(() => as(U.cR1, () => db.query(`select * from public.support_request_audience($1)`, [rq])), /permission denied/);
+  await denied(() => as(U.admin, () => db.query(`select * from public.pending_counts_audience()`)), /permission denied/);
+  await denied(() => as(U.vR4, () => db.query(`select public.claim_notification($1, 'x', $2, false)`, [U.vR4, rq])), /permission denied/);
+
+  // — Conteos pendientes —
+  await db.query(`delete from public.service_counts where event_id in ($1, $2)`, [U.evYest, U.evToday]);
+  await sub(U.cR1, 'https://push.example/c1');
+  const pend = () => asServer(() => rows(`select user_id, event_id from public.pending_counts_audience()`));
+  const p1 = await pend();
+  assert.ok(p1.some((r) => r.user_id === U.cR1 && r.event_id === U.evYest) && p1.some((r) => r.user_id === U.cR1 && r.event_id === U.evToday), 'el coordinador recibe los pendientes de hoy y de ayer');
+  assert.ok(!p1.some((r) => r.user_id === U.vR1 || r.user_id === U.cR2 || r.user_id === U.vR4), 'ni voluntarios ni otros grupos');
+  assert.ok(!p1.some((r) => r.event_id === U.evFut), 'ni servicios futuros');
+  await db.query(`insert into public.service_counts (event_id, location_id, total) values ($1, $2, 10)`, [U.evYest, U.locA]);
+  assert.ok(!(await pend()).some((r) => r.event_id === U.evYest), 'con algún total registrado ya no es pendiente');
+  await db.query(`insert into public.notification_prefs (user_id, pending_counts) values ($1, false)`, [U.cR1]);
+  assert.ok(!(await pend()).some((r) => r.user_id === U.cR1), 'quien lo desactivó no lo recibe');
+  await db.query(`delete from public.notification_prefs where user_id = $1`, [U.cR1]);
+  await db.query(`update public.service_events set service_date = public.today_co() - 2 where id = $1`, [U.evToday]);
+  assert.ok(!(await pend()).some((r) => r.event_id === U.evToday), 'pasado el plazo (más de 1 día) ya no se avisa');
+  await db.query(`update public.service_events set service_date = public.today_co() where id = $1`, [U.evToday]);
+
+  // — Que no se repita —
+  const claim = (u, kind, ref, daily) => asServer(async () => (await one(`select public.claim_notification($1, $2, $3, $4) ok`, [u, kind, ref, daily])).ok);
+  assert.equal(await claim(U.vR4, 'support_request', rq, false), true);
+  assert.equal(await claim(U.vR4, 'support_request', rq, false), false, 'una solicitud se avisa una sola vez por persona');
+  assert.equal(await claim(U.vR5, 'support_request', rq, false), true);
+  assert.equal(await claim(U.cR1, 'pending_counts', U.evToday, true), true);
+  assert.equal(await claim(U.cR1, 'pending_counts', U.evToday, true), false, 'los conteos, una vez al día');
+  assert.equal((await one(`select (sent_on = public.today_co()) as hoy from public.notification_log where kind = 'pending_counts' limit 1`)).hoy, true, 'el aviso diario se anota con la fecha de hoy');
+  await db.query(`update public.notification_log set sent_on = sent_on - 1 where kind = 'pending_counts'`);
+  assert.equal(await claim(U.cR1, 'pending_counts', U.evToday, true), true, 'y otra vez al día siguiente');
+  // Todo se va con la cuenta
+  await as(U.vR4, () => db.query(`select public.delete_my_account()`));
+  assert.equal(await count('push_subscriptions', `user_id = '${U.vR4}'`), 0);
+  assert.equal(await count('notification_log', `user_id = '${U.vR4}'`), 0);
 });
