@@ -6,7 +6,8 @@ El plan completo está en [`PLAN.md`](PLAN.md). Estado actual: **Fases 1 a 9** c
 - **App:** Next.js 16 (App Router) en Vercel · **Datos, login y archivos:** Supabase
 - `legacy/` — prototipo original (HTML estático) y las imágenes de mapas de Castellana
 - `supabase/migrations/` — esquema, permisos (RLS), acceso por invitación, storage y carga inicial
-- `supabase/tests/` — pruebas de permisos sobre Postgres en WASM
+- `supabase/tests/` — pruebas de permisos (RLS) sobre Postgres en WASM
+- `app/` — pantallas y rutas (`app/api/`: asistente, avisos, solicitudes de apoyo y tarea programada) · `lib/` — lógica por tema (manual, personas, novedades, servicio, apoyos, conteos, chat, avisos) · `components/` — interfaz · `public/sw.js` — service worker · `vercel.json` — tarea programada
 
 ## Puesta en marcha
 
@@ -27,8 +28,17 @@ El plan completo está en [`PLAN.md`](PLAN.md). Estado actual: **Fases 1 a 9** c
    (Aunque no lo actives, el trigger `on_auth_user_created` ya impide crear cuentas sin invitación; el hook solo da un mensaje más claro.)
 
 ### 2. Variables de entorno
-Copia `.env.example` a `.env.local` y complétalo. En Vercel agrega `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
-`SUPABASE_SERVICE_ROLE_KEY` es secreta: solo para scripts locales, nunca en Vercel ni en el navegador.
+Copia `.env.example` a `.env.local` y complétalo (cada variable está comentada ahí). En Vercel agrega:
+
+| Variable | Para qué | Dónde |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Conexión con Supabase (obligatorias) | navegador y servidor |
+| `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `CHAT_DAILY_LIMIT` | Asistente de IA (ver *Asistente*) | solo servidor |
+| `LEGAL_NAME`, `LEGAL_CITY`, `LEGAL_EMAIL`, `LEGAL_ORG` | Responsable de los datos en la política (ver *Protección de datos*) | solo servidor |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Avisos al teléfono | la pública va al navegador; la privada, solo servidor |
+| `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET` | Buscar a quién avisar y proteger la tarea programada | solo servidor |
+
+`SUPABASE_SERVICE_ROLE_KEY` es la clave más poderosa de Supabase: nunca con `NEXT_PUBLIC_`, nunca en el navegador ni en el repositorio. Lo opcional (asistente, avisos, datos legales) puede faltar: la aplicación funciona y solo no ofrece esa parte.
 
 ### 3. Imágenes de la carga inicial
 ```bash
@@ -40,7 +50,7 @@ npm run seed:assets     # sube legacy/*.png al bucket "maps"
 ```bash
 npm run dev             # http://localhost:3000
 npm run typecheck && npm run lint
-npm test                # pruebas unitarias (enlaces de YouTube) + permisos de la base de datos
+npm test                # pruebas unitarias (lógica de lib/) + permisos de la base de datos (RLS)
 ```
 
 ## Editar el manual
@@ -72,7 +82,7 @@ Nadie crea cuenta sin una invitación (un correo agregado). Se administra en **P
 - Los roles globales (administrador y cabeza) se dan invitando desde **Personas → Líderes y administración** (solo el administrador).
 
 ## Novedades
-Noticias, cambios y avisos en **Novedades** (menú superior); los más recientes también salen en el inicio.
+Noticias, cambios y avisos en **Novedades** (menú superior); los más recientes también salen en el inicio (resumidos, sin imágenes).
 
 | Alcance | Lo ve |
 |---|---|
@@ -120,7 +130,7 @@ Cuando en un servicio planeado falta gente, el grupo suma apoyo de otros grupos 
 - **Solicitud de apoyo:** quien planifica pide «N personas» (con nota y posiciones opcionales). Solo la ven quienes pueden apoyar, en **Inicio** y en **Mi servicio** (con un contador en el menú). La persona se postula con «Quiero apoyar» y el coordinador o supervisor **aprueba o rechaza**. No se pasa del cupo; la solicitud deja de verse cuando se llena, se cancela o el servicio deja de ser el próximo, y se reabre si un apoyo se retira.
 - **Un apoyo aprobado** es parte del servicio ese día: puede recibir posiciones (las de supervisor, solo si es supervisor), ve la planeación publicada y los archivos, y el servicio aparece en su Mi servicio e historial como «Apoyo a Grupo X». Puede **retirarse solo hasta el día anterior**; ese día o después debe avisar a su coordinador.
 - **El grupo de origen se entera:** el coordinador ve en Mi servicio quiénes de su grupo apoyan a otros y cuándo (sin aprobar nada).
-- **Avisos:** dentro de la aplicación. Las notificaciones al teléfono llegan con la PWA en la fase 8.
+- **Avisos:** dentro de la aplicación y, para las solicitudes de apoyo, también al teléfono si la persona activó los avisos (ver *Aplicación instalable y avisos al teléfono*).
 - Todas las reglas las hace cumplir la base de datos (funciones con permisos), no solo la pantalla.
 
 ## Conteos y totales
@@ -163,4 +173,4 @@ Cada fase nueva trae migraciones. El orden seguro es:
 1. Publica primero el código nuevo (fusiona el pull request y espera el despliegue de Vercel).
 2. Luego aplica las migraciones: `npx supabase db push`.
 
-Notas por fase: la `20261019000001_people.sql` quita el correo de `profiles` y lo mueve a `profile_private`; la `20261020000001_announcements.sql` crea los anuncios (hasta aplicarla, el inicio muestra «No hay anuncios por ahora»); la `20261021000001_rotation.sql` crea la rotación, la planeación y el bucket privado `schedules` (hasta aplicarla, Mi servicio y Rotación no funcionan); la `20261022000001_chat.sql` crea la búsqueda y el límite diario del asistente; la `20261023000001_privacy.sql` crea la constancia de aceptación y la baja de cuenta (es aditiva: hasta aplicarla, la aplicación no pide aceptar los textos); la `20261025000001_support.sql` crea las ausencias, los apoyos y las solicitudes (aditiva; hasta aplicarla, Mi servicio funciona igual y simplemente no hay solicitudes); la `20261026000001_counts.sql` agrega la capacidad de las ubicaciones, las guías de conteo (bucket privado `counts`) y los totales (aditiva: hasta aplicarla, el menú Conteos no tiene datos); la `20261028000001_announcement_images.sql` crea las imágenes de las novedades y su bucket privado (aditiva: hasta aplicarla, las novedades funcionan sin imágenes); la `20261027000001_push.sql` crea los dispositivos de avisos, las preferencias y las funciones del servidor (aditiva); la `20261024000001_minimal_data.sql` deja de guardar la foto de Google y borra las ya guardadas (publica primero el código nuevo, que ya no la pide, y luego aplica esta migración).
+Notas por fase: la `20261019000001_people.sql` quita el correo de `profiles` y lo mueve a `profile_private`; la `20261020000001_announcements.sql` crea los anuncios (hasta aplicarla, el inicio muestra «No hay anuncios por ahora»); la `20261021000001_rotation.sql` crea la rotación, la planeación y el bucket privado `schedules` (hasta aplicarla, Mi servicio y Rotación no funcionan); la `20261022000001_chat.sql` crea la búsqueda y el límite diario del asistente; la `20261023000001_privacy.sql` crea la constancia de aceptación y la baja de cuenta (es aditiva: hasta aplicarla, la aplicación no pide aceptar los textos); la `20261025000001_support.sql` crea las ausencias, los apoyos y las solicitudes (aditiva; hasta aplicarla, Mi servicio funciona igual y simplemente no hay solicitudes); la `20261026000001_counts.sql` agrega la capacidad de las ubicaciones, las guías de conteo (bucket privado `counts`) y los totales (aditiva: hasta aplicarla, el menú Conteos no tiene datos); la `20261027000001_push.sql` crea los dispositivos de avisos, las preferencias y las funciones del servidor (aditiva); la `20261028000001_announcement_images.sql` crea las imágenes de las novedades y su bucket privado `announcements` (aditiva: hasta aplicarla, las novedades funcionan sin imágenes); la `20261024000001_minimal_data.sql` deja de guardar la foto de Google y borra las ya guardadas (publica primero el código nuevo, que ya no la pide, y luego aplica esta migración).
