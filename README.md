@@ -82,7 +82,7 @@ Nadie crea cuenta sin una invitación (un correo agregado). Se administra en **P
 - Los roles globales (administrador y cabeza) se dan invitando desde **Personas → Líderes y administración** (solo el administrador).
 
 ## Novedades
-Noticias, cambios y avisos en **Novedades** (menú superior); los más recientes también salen en el inicio (resumidos, sin imágenes).
+Noticias, cambios y avisos en **Novedades** (menú superior); los más recientes también salen en el inicio.
 
 | Alcance | Lo ve |
 |---|---|
@@ -97,6 +97,7 @@ Cabeza de ministerio y administrador ven todo.
 - **Quién publica, edita y elimina:** cabeza y administrador, en cualquier alcance; el **líder de sede**, en su sede (sede, sede y día, o un grupo de su sede); el **coordinador**, solo en su grupo. Supervisores y voluntarios solo leen. Lo hace cumplir la base de datos, no solo la pantalla.
 - **Tipo** (anuncio, cambio o noticia; todos aparecen en Novedades), **fijar arriba**, hasta 5 **enlaces** (solo `https`) y los enlaces escritos dentro del texto también se pueden abrir. Los enlaces se abren en **una ventana dentro de la aplicación**, con un botón «Abrir en el navegador» (algunas páginas no permiten verse incrustadas; los videos de YouTube sí). Hasta 4 **imágenes** por novedad, visibles directamente en la tarjeta (al tocarlas se ven ampliadas); pesan **máximo 1 MB**: si una es más grande, la aplicación la reduce sola antes de subirla. Se guardan en el bucket privado `announcements`.
 - **Vigencia:** se puede programar la publicación y dar una fecha de fin. Quien lo administra ve también los programados y los vencidos, marcados como tales; los demás, solo los vigentes. Las fechas se escriben y se muestran en hora de Colombia.
+- **En Inicio** las novedades recientes salen resumidas (tipo, alcance, inicio del mensaje); al tocar una se abre **su detalle completo en una ventana** (mensaje, imágenes y enlaces) sin salir de Inicio.
 - Cada novedad muestra quién la publicó, con su nombre y rol (nunca su correo).
 
 ## Rotación y servicio
