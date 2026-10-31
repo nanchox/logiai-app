@@ -11,7 +11,7 @@ import { Tabs, pickTab, type TabItem } from "@/components/service/Tabs";
 import { requireUser } from "@/lib/auth";
 import { serviceLabel } from "@/lib/labels";
 import { formatServiceDate } from "@/lib/service/dates";
-import { loadCountLocations, loadCountLog, loadCounts, loadGuides } from "@/lib/counts/load";
+import { loadCountLocations, loadCountLog, loadCounts, loadGuides, loadReservationDefaults, loadReservationOverrides, loadReservationZones } from "@/lib/counts/load";
 import { canCountNow, countWindow } from "@/lib/counts/window";
 import { addDays, todayCo } from "@/lib/service/dates";
 import { loadEvent, loadEvents, loadPlan, loadPlanPositions, loadRotationGroups } from "@/lib/service/load";
@@ -43,14 +43,17 @@ export default async function ServicePage({ params, searchParams }: PageProps<"/
   const [request] = await Promise.all([isNext ? loadEventRequest(supabase, event.id) : Promise.resolve(null)]);
   const applications = request ? await loadApplications(supabase, request.id) : [];
   // Conteos: la guía la ven quienes sirven ese día; los totales, quienes planifican el servicio.
-  const [guides, countLocations, counts, countLog] = event.status === "programado" && event.groupId
+  const [guides, countLocations, counts, countLog, zones, rsvDefaults, rsvOverrides] = event.status === "programado" && event.groupId
     ? await Promise.all([
         loadGuides(supabase, event.siteId),
         loadCountLocations(supabase, event.siteId),
         canPlan ? loadCounts(supabase, [event.id]) : Promise.resolve([]),
         canManage ? loadCountLog(supabase, event.id) : Promise.resolve([]),
+        canPlan ? loadReservationZones(supabase, event.siteId) : Promise.resolve([]),
+        canPlan ? loadReservationDefaults(supabase) : Promise.resolve([]),
+        canPlan ? loadReservationOverrides(supabase, event.id) : Promise.resolve([]),
       ])
-    : [[], [], [], []];
+    : [[], [], [], [], [], [], []];
   const guide = guides.find((g) => g.day === event.day) ?? null;
   const today = todayCo();
   // Quien apoya no ve el nombre de un grupo ajeno con sus permisos normales.
@@ -99,7 +102,7 @@ export default async function ServicePage({ params, searchParams }: PageProps<"/
       {tab === "apoyos" && canPlan && isNext && <SupportPanel event={event} people={people} request={request} applications={applications} positions={positions} />}
 
       {tab === "conteos" && live && (
-        <CountPanel eventId={event.id} date={event.date} day={event.day} locations={countLocations} counts={counts} guide={guide} canSeeCounts={canPlan} canCount={canPlan && canCountNow(event.date, today, canManage)} window={countWindow(event.date, today)} manager={canManage} log={countLog} />
+        <CountPanel eventId={event.id} date={event.date} day={event.day} locations={countLocations} counts={counts} guide={guide} canSeeCounts={canPlan} canCount={canPlan && canCountNow(event.date, today, canManage)} window={countWindow(event.date, today)} manager={canManage} log={countLog} zones={zones} reservationDefaults={rsvDefaults} reservations={rsvOverrides} />
       )}
 
       {tab === "posiciones" && live && (

@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { btn, btnDanger, btnPrimary, ErrorText, input, label } from "@/components/manual/ui";
 import { DAY_LABEL, LOCATION_KIND_LABEL } from "@/lib/labels";
 import { createClient } from "@/lib/supabase/client";
-import { deleteGuide, saveCapacity, saveGuideNote, uploadGuide } from "@/lib/counts/mutations";
-import type { CountGuide, CountLocation } from "@/lib/counts/types";
+import { deleteGuide, saveCapacity, saveGuideNote, saveReservationDefault, uploadGuide } from "@/lib/counts/mutations";
+import type { CountGuide, CountLocation, ReservationDefault, ReservationZone } from "@/lib/counts/types";
 
 type Site = { id: string; slug: string; name: string };
 const DAYS = ["miercoles", "sabado", "domingo"] as const;
@@ -23,7 +23,7 @@ function useAction() {
   return { busy, error, done, run };
 }
 
-export function CountConfig({ sites, locations, guides }: { sites: Site[]; locations: CountLocation[]; guides: CountGuide[] }) {
+export function CountConfig({ sites, locations, guides, zones, defaults }: { sites: Site[]; locations: CountLocation[]; guides: CountGuide[]; zones: ReservationZone[]; defaults: ReservationDefault[] }) {
   if (!sites.length) return <p className="text-muted">No hay sedes disponibles.</p>;
   return (
     <div className="space-y-8">
@@ -31,6 +31,7 @@ export function CountConfig({ sites, locations, guides }: { sites: Site[]; locat
         <section key={s.id} aria-label={s.name} className="space-y-4">
           <h2 className="text-xl font-extrabold">{s.name}</h2>
           <Capacity site={s} locations={locations.filter((l) => l.siteId === s.id)} />
+          <Reservations site={s} zones={zones.filter((z) => z.siteId === s.id)} defaults={defaults} />
           <Guides site={s} guides={guides.filter((g) => g.siteId === s.id)} />
         </section>
       ))}
@@ -68,6 +69,54 @@ function Capacity({ site, locations }: { site: Site; locations: CountLocation[] 
       <ErrorText error={error} />
       {done && <p role="status" className="rounded-lg border border-primary/50 bg-primary/10 p-2 text-sm">{done}</p>}
       <button type="submit" className={btnPrimary} disabled={busy || changed.length === 0}>Guardar capacidades</button>
+    </form>
+  );
+}
+
+function Reservations({ site, zones, defaults }: { site: Site; zones: ReservationZone[]; defaults: ReservationDefault[] }) {
+  const sb = useMemo(() => createClient(), []);
+  const { busy, error, done, run } = useAction();
+  const key = (zoneId: string, day: string) => `${zoneId}:${day}`;
+  const initial = useMemo(() => Object.fromEntries(defaults.map((d) => [key(d.zoneId, d.day), String(d.seats)])), [defaults]);
+  const [vals, setVals] = useState<Record<string, string>>(initial);
+  const cells = zones.flatMap((z) => DAYS.map((d) => ({ zone: z, day: d, k: key(z.id, d) })));
+  const changed = cells.filter((c) => (vals[c.k] ?? "") !== (initial[c.k] ?? ""));
+  const bad = (k: string) => { const v = (vals[k] ?? "").trim(); return v !== "" && (!Number.isInteger(Number(v)) || Number(v) < 0 || Number(v) > 10000); };
+  return (
+    <form className="space-y-3 rounded-2xl border border-line bg-surface p-5" aria-label={`Reservas por zona de ${site.name}`} onSubmit={(e) => {
+      e.preventDefault();
+      run(async () => {
+        for (const c of changed) { const v = (vals[c.k] ?? "").trim(); await saveReservationDefault(sb, c.zone.id, c.day, v === "" ? null : Number(v)); }
+        return "Reservas predeterminadas guardadas.";
+      });
+    }}>
+      <div>
+        <h3 className="text-lg font-extrabold">Reservas por zona (predeterminadas)</h3>
+        <p className="text-sm text-muted">Puestos reservados en una fila de cada zona, por día de la semana. Se repiten cada semana; durante un servicio, el coordinador o el supervisor pueden cambiarlos solo para ese día. Vacío = sin reserva.</p>
+      </div>
+      {zones.length === 0 ? <p className="text-sm text-muted">Esta sede todavía no tiene zonas: créalas en el Manual (cada espacio tiene sus zonas).</p> : (
+        <div className="overflow-x-auto rounded-lg border border-line">
+          <table className="w-full min-w-[32rem] text-left text-sm">
+            <thead className="bg-bg"><tr><th className="p-2">Zona</th>{DAYS.map((d) => <th key={d} className="p-2">{DAY_LABEL[d]}</th>)}</tr></thead>
+            <tbody className="divide-y divide-line">
+              {zones.map((z) => (
+                <tr key={z.id}>
+                  <th scope="row" className="p-2 font-semibold">{z.name} <span className="font-normal text-muted">· {z.locationName}</span></th>
+                  {DAYS.map((d) => (
+                    <td key={d} className="p-2">
+                      <input type="number" inputMode="numeric" min={0} max={10000} className={`${input} ${bad(key(z.id, d)) ? "!border-danger" : ""}`} aria-label={`Reservas de ${z.name}, ${DAY_LABEL[d]}`}
+                        value={vals[key(z.id, d)] ?? ""} onChange={(e) => setVals({ ...vals, [key(z.id, d)]: e.target.value })} placeholder="—" />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <ErrorText error={error} />
+      {done && <p role="status" className="rounded-lg border border-primary/50 bg-primary/10 p-2 text-sm">{done}</p>}
+      <button type="submit" className={btnPrimary} disabled={busy || changed.length === 0 || changed.some((c) => bad(c.k))}>Guardar reservas</button>
     </form>
   );
 }

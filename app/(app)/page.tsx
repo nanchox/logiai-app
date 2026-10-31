@@ -2,6 +2,9 @@ import Link from "next/link";
 import { AnnouncementCard } from "@/components/announcements/AnnouncementCard";
 import { loadAnnouncements } from "@/lib/announcements/load";
 import { ActiveBadge } from "@/components/service/ActiveBadge";
+import { TodayService } from "@/components/counts/TodayService";
+import { loadCountLocations, loadCounts, loadGuides, loadReservationDefaults, loadReservationOverrides, loadReservationZones } from "@/lib/counts/load";
+import { canCountNow, countWindow } from "@/lib/counts/window";
 import { SupportRequests } from "@/components/support/SupportRequests";
 import { serviceLabel } from "@/lib/labels";
 import { loadActiveServices } from "@/lib/service/load-active";
@@ -24,6 +27,18 @@ export default async function HomePage() {
   // Coordinadores, supervisores, líderes de sede, cabeza y administrador: atajos a su servicio activo, los conteos y el manual de su sede.
   const shortcuts = user.isAdmin || user.isHead || user.leaderSites.length > 0 || (!!user.membership && ["coordinador", "supervisor"].includes(user.membership.role));
   const active = shortcuts ? (await loadActiveServices(supabase, user, todayCo())).slice(0, 3) : [];
+  // El día del servicio, el coordinador y el supervisor del grupo tienen a mano la guía, el manual y los conteos con las reservas.
+  const todayItem = user.membership && ["coordinador", "supervisor"].includes(user.membership.role) ? active.find((a) => a.isToday && a.kind === "grupo") : undefined;
+  const todayData = todayItem && user.membership
+    ? await Promise.all([
+        loadGuides(supabase, user.membership.site.id),
+        loadCountLocations(supabase, user.membership.site.id),
+        loadCounts(supabase, [todayItem.eventId]),
+        loadReservationZones(supabase, user.membership.site.id),
+        loadReservationDefaults(supabase),
+        loadReservationOverrides(supabase, todayItem.eventId),
+      ])
+    : null;
   const manuals = user.isAdmin || user.isHead
     ? [{ href: "/manual", label: "Manual de logística", hint: "Todas las sedes" }]
     : user.leaderSites.length
@@ -50,6 +65,18 @@ export default async function HomePage() {
 
       {shortcuts && (
         <section aria-label="Atajos" className="space-y-3">
+          {todayItem && todayData && user.membership && (
+            <TodayService
+              eventId={todayItem.eventId} date={todayItem.date} day={todayItem.day} shift={todayItem.shift} siteName={todayItem.siteName} groupName={todayItem.groupName}
+              manualHref={`/manual/${user.membership.site.slug}`}
+              guide={todayData[0].find((g) => g.day === todayItem.day) ?? null}
+              panel={{
+                eventId: todayItem.eventId, date: todayItem.date, day: todayItem.day, locations: todayData[1], counts: todayData[2],
+                canCount: canCountNow(todayItem.date, todayCo(), false), window: countWindow(todayItem.date, todayCo()), manager: false, canSeeCounts: true, log: [],
+                zones: todayData[3], reservationDefaults: todayData[4], reservations: todayData[5],
+              }}
+            />
+          )}
           <div className="space-y-3" aria-label="Servicio activo">
             <h2 className="text-lg font-extrabold">Tu servicio activo</h2>
             {active.length === 0 ? (

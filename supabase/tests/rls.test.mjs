@@ -1685,3 +1685,62 @@ test('novedades · imágenes: máximo 4, en la carpeta de su novedad, visibles s
   await as(U.coord1, () => db.query(`delete from public.announcements where id = $1`, [id]));
   assert.equal(await count('announcement_images'), 0);
 });
+
+test('reservas por zona · predeterminado por día (lo define el líder) y ajuste de un servicio (quien lo cuenta, con el mismo plazo)', async () => {
+  const zA = (await one(`insert into public.zones (location_id, name) values ($1, 'Zona reservada A') returning id`, [U.locA])).id;
+  const zOther = (await one(`insert into public.zones (location_id, name) values ($1, 'Zona de otra sede') returning id`, [U.locCas])).id;
+  // Servicios: el de hoy de las pruebas anteriores, uno futuro y uno de hace 40 días (fuera del plazo)
+  const mkEv = async (offset) => (await one(`insert into public.service_events (slot_id, service_date, group_id, kind, turn) values ($1, public.today_co() + $2::int, $3, 'rotacion', 0) returning id`, [U.slotCamp, offset, U.gR1])).id;
+  const evT = U.evToday, evF = await mkEv(41), evO = await mkEv(-40);
+  const dflt = (uid, zone, day, seats) => as(uid, () => db.query(`insert into public.zone_reservation_defaults (zone_id, day, seats) values ($1, $2, $3) on conflict (zone_id, day) do update set seats = excluded.seats`, [zone, day, seats]));
+  const saveRes = (uid, ev, arr) => rpc(uid, `select public.save_reservations($1, $2::jsonb)`, [ev, JSON.stringify(arr)]);
+  const seats = async (uid) => as(uid, async () => (await rows(`select seats from public.service_reservations where event_id = $1`, [evT])).map((r) => r.seats));
+
+  // Predeterminados: solo quien administra la sede
+  await dflt(U.liderCamp, zA, 'domingo', 12);
+  await dflt(U.admin, zA, 'sabado', 8);
+  await denied(() => dflt(U.cR1, zA, 'domingo', 99), /row-level security/);
+  await denied(() => dflt(U.vR1, zA, 'domingo', 99), /row-level security/);
+  await denied(() => dflt(U.liderNogal2, zA, 'domingo', 99), /row-level security/);
+  await denied(() => dflt(U.liderCamp, zA, 'miercoles', -1), /check/);
+  await denied(() => dflt(U.liderCamp, zA, 'miercoles', 10001), /check/);
+  // Quién los ve: quienes sirven ese día en la sede
+  const dflts = (uid) => as(uid, async () => (await rows(`select day from public.zone_reservation_defaults where zone_id = $1 order by day`, [zA])).map((r) => r.day));
+  assert.deepEqual(await dflts(U.cR1), ['domingo'], 'el grupo que sirve el domingo');
+  assert.deepEqual(await dflts(U.liderCamp), ['sabado', 'domingo']);
+  assert.deepEqual(await dflts(U.vol1), [], 'otra sede');
+
+  // Ajuste de un servicio: mismas reglas de quién y cuándo que los conteos
+  await saveRes(U.cR1, evT, [{ zone_id: zA, seats: 14 }]);
+  assert.deepEqual(await seats(U.cR1), [14], 'el coordinador lo ve');
+  await saveRes(U.cR1, evT, [{ zone_id: zA, seats: 10 }]);
+  assert.deepEqual(await seats(U.cR1), [10]);
+  assert.deepEqual(await seats(U.vR1), [], 'un voluntario no ve los ajustes');
+  assert.deepEqual(await seats(U.vol1), []);
+  await denied(() => saveRes(U.vR1, evT, [{ zone_id: zA, seats: 1 }]), /No puedes registrar/);
+  await denied(() => saveRes(U.cR2, evT, [{ zone_id: zA, seats: 1 }]), /No puedes registrar/);
+  await denied(() => saveRes(U.cR1, evF, [{ zone_id: zA, seats: 1 }]), /No puedes registrar/, 'antes del día no');
+  await denied(() => saveRes(U.cR1, evO, [{ zone_id: zA, seats: 1 }]), /No puedes registrar/, 'pasado el plazo, el coordinador no');
+  await saveRes(U.liderCamp, evO, [{ zone_id: zA, seats: 5 }]);
+  // Validación y todo o nada
+  await denied(() => saveRes(U.cR1, evT, [{ zone_id: zA, seats: -1 }]), /entero entre 0 y 10000/);
+  await denied(() => saveRes(U.cR1, evT, [{ zone_id: zA, seats: 1.5 }]), /entero entre 0 y 10000/);
+  await denied(() => saveRes(U.cR1, evT, [{ zone_id: zA, seats: '3' }]), /entero entre 0 y 10000/);
+  await denied(() => saveRes(U.cR1, evT, [{ zone_id: zA, seats: 10001 }]), /entero entre 0 y 10000/);
+  await denied(() => saveRes(U.cR1, evT, [{ zone_id: 'x', seats: 1 }]), /no son válidas/);
+  await denied(() => saveRes(U.cR1, evT, { zone_id: zA, seats: 1 }), /no son válidas/);
+  await denied(() => saveRes(U.cR1, evT, [{ zone_id: zOther, seats: 1 }]), /no es de la sede/, 'zona de otra sede');
+  await denied(() => saveRes(U.cR1, evT, [{ zone_id: zA, seats: 3 }, { zone_id: zOther, seats: 1 }]), /no es de la sede/);
+  assert.deepEqual(await seats(U.cR1), [10], 'si uno falla no se guarda ninguno');
+  // Un valor nulo vuelve al predeterminado
+  await saveRes(U.cR1, evT, [{ zone_id: zA, seats: null }]);
+  assert.deepEqual(await seats(U.cR1), []);
+  // Las tablas solo se escriben con las funciones (el ajuste), y el predeterminado solo por el líder
+  await denied(() => as(U.liderCamp, () => db.query(`insert into public.service_reservations (event_id, zone_id, seats) values ($1, $2, 1)`, [evT, zA])), /permission denied/);
+  await denied(() => as(U.admin, () => db.query(`delete from public.service_reservations`)), /permission denied/);
+  // Si se elimina la zona, se van sus predeterminados y ajustes
+  await saveRes(U.cR1, evT, [{ zone_id: zA, seats: 7 }]);
+  await db.query(`delete from public.zones where id = $1`, [zA]);
+  assert.equal(await count('service_reservations'), 0);
+  assert.equal(await count('zone_reservation_defaults'), 0);
+});

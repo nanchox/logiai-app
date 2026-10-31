@@ -43,3 +43,24 @@ export async function saveServiceCounts(sb: SupabaseClient, eventId: string, val
   const { error } = (await sb.rpc("save_counts", { p_event: eventId, p_counts: payload })) as { error: PgError };
   if (error) throw explain(error);
 }
+
+const validSeats = (n: number | null) => n === null || (Number.isInteger(n) && n >= 0 && n <= 10000);
+
+/** Predeterminado de puestos reservados de una zona en un día de la semana. Vacío (null) lo quita. */
+export async function saveReservationDefault(sb: SupabaseClient, zoneId: string, day: string, seats: number | null) {
+  if (!validSeats(seats)) throw new Error("Los puestos reservados deben ser un número entero entre 0 y 10000.");
+  if (seats === null) {
+    const { error } = await sb.from("zone_reservation_defaults").delete().eq("zone_id", zoneId).eq("day", day);
+    if (error) throw explain(error);
+    return;
+  }
+  const { error } = await sb.from("zone_reservation_defaults").upsert({ zone_id: zoneId, day, seats, updated_at: new Date().toISOString() }, { onConflict: "zone_id,day" });
+  if (error) throw explain(error);
+}
+
+/** Ajusta las reservas de un servicio (todo o nada). Vacío (null) vuelve al predeterminado del día. */
+export async function saveServiceReservations(sb: SupabaseClient, eventId: string, items: { zoneId: string; seats: number | null }[]) {
+  if (items.some((i) => !validSeats(i.seats))) throw new Error("Los puestos reservados deben ser un número entero entre 0 y 10000.");
+  const { error } = (await sb.rpc("save_reservations", { p_event: eventId, p_items: items.map((i) => ({ zone_id: i.zoneId, seats: i.seats })) })) as { error: PgError };
+  if (error) throw explain(error);
+}

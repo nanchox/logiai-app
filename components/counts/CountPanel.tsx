@@ -7,7 +7,8 @@ import { btnPrimary, ErrorText, input } from "@/components/manual/ui";
 import { formatDateTime } from "@/lib/announcements/dates";
 import { DAY_LABEL } from "@/lib/labels";
 import { addDays, formatServiceDate } from "@/lib/service/dates";
-import type { CountGuide, CountLocation, CountLogEntry, CountRow } from "@/lib/counts/types";
+import type { CountGuide, CountLocation, CountLogEntry, CountRow, ReservationDefault, ReservationOverride, ReservationZone } from "@/lib/counts/types";
+import { ReservationsForm } from "./ReservationsForm";
 import { type CountWindow } from "@/lib/counts/window";
 import { saveServiceCounts } from "@/lib/counts/mutations";
 import { createClient } from "@/lib/supabase/client";
@@ -17,9 +18,11 @@ const pct = (n: number, cap: number) => (cap > 0 ? Math.round((n / cap) * 1000) 
 /** Guía de conteo (imagen) y captura del total final por ubicación de un servicio. */
 export function CountPanel({
   eventId, date, day, locations, counts, guide, canCount, window: win, manager, canSeeCounts, log,
+  zones = [], reservationDefaults = [], reservations = [], showGuide = true,
 }: {
   eventId: string; date: string; day: string; locations: CountLocation[]; counts: CountRow[]; guide: CountGuide | null;
   canCount: boolean; window: CountWindow; manager: boolean; canSeeCounts: boolean; log: CountLogEntry[];
+  zones?: ReservationZone[]; reservationDefaults?: ReservationDefault[]; reservations?: ReservationOverride[]; showGuide?: boolean;
 }) {
   const sb = useMemo(() => createClient(), []);
   const router = useRouter();
@@ -61,7 +64,7 @@ export function CountPanel({
         <p className="text-sm text-muted">Se cuenta en cada entrada como indica la guía; al terminar el servicio se registra cuántas personas entraron en cada ubicación.</p>
       </div>
 
-      {guide?.url ? (
+      {showGuide && (guide?.url ? (
         <figure className="space-y-2">
           <a href={guide.url} target="_blank" rel="noreferrer" aria-label="Abrir la guía de conteo en grande">
             {/* eslint-disable-next-line @next/next/no-img-element -- imagen firmada y privada: next/image no aplica */}
@@ -71,7 +74,7 @@ export function CountPanel({
         </figure>
       ) : (
         <p className="text-sm text-muted">Todavía no hay una guía de conteo para este día{manager ? <>: cárgala en <Link href="/conteos/configurar">Conteos → Capacidad y guías</Link>.</> : "."}</p>
-      )}
+      ))}
 
       {canSeeCounts && (
         withCapacity.length === 0 ? (
@@ -104,6 +107,10 @@ export function CountPanel({
             {saved && <p role="status" className="rounded-lg border border-primary/50 bg-primary/10 p-2 text-sm">Conteos guardados.</p>}
           </form>
         )
+      )}
+
+      {canSeeCounts && zones.length > 0 && (
+        <ReservationsForm eventId={eventId} day={day} zones={zones} defaults={reservationDefaults} overrides={reservations} canEdit={canCount} manager={manager} />
       )}
 
       {manager && log.length > 0 && (
