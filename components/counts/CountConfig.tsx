@@ -79,14 +79,16 @@ function Reservations({ site, zones, defaults }: { site: Site; zones: Reservatio
   const key = (zoneId: string, day: string) => `${zoneId}:${day}`;
   const initial = useMemo(() => Object.fromEntries(defaults.map((d) => [key(d.zoneId, d.day), String(d.seats)])), [defaults]);
   const [vals, setVals] = useState<Record<string, string>>(initial);
+  const [base, setBase] = useState<Record<string, string>>(initial);   // lo último guardado: lo que se compara para saber qué cambió
   const cells = zones.flatMap((z) => DAYS.map((d) => ({ zone: z, day: d, k: key(z.id, d) })));
-  const changed = cells.filter((c) => (vals[c.k] ?? "") !== (initial[c.k] ?? ""));
+  const changed = cells.filter((c) => (vals[c.k] ?? "") !== (base[c.k] ?? ""));
   const bad = (k: string) => { const v = (vals[k] ?? "").trim(); return v !== "" && (!Number.isInteger(Number(v)) || Number(v) < 0 || Number(v) > 10000); };
   return (
     <form className="space-y-3 rounded-2xl border border-line bg-surface p-5" aria-label={`Reservas por zona de ${site.name}`} onSubmit={(e) => {
       e.preventDefault();
       run(async () => {
         for (const c of changed) { const v = (vals[c.k] ?? "").trim(); await saveReservationDefault(sb, c.zone.id, c.day, v === "" ? null : Number(v)); }
+        setBase({ ...vals });
         return "Reservas predeterminadas guardadas.";
       });
     }}>
