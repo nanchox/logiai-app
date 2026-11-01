@@ -201,6 +201,30 @@ Los grupos cuentan a las personas que entran por cada entrada de la sede; al ter
 - **Quién lo ve:** el líder de su sede, la cabeza y el administrador (todas las sedes, con totales consolidados). Los coordinadores y supervisores ven **solo los conteos de sus servicios**.
 - Todas las reglas las hace cumplir la base de datos, no solo la pantalla.
 
+## 8.4 Entradas, cuadre de aforo y contador digital (plan acordado)
+
+**Decisiones acordadas**
+- El número de cada entrada es un **cupo asignado** (cuántas personas se espera que entren por ahí). Es el tope del contador digital.
+- El cuadre por ubicación es: **cupos de las entradas + reservas = aforo**. Cuentan **ambas** reservas: las «por zona» (predeterminado por día y ajuste del servicio) y las del rol «Reservas» de ese día. Como un mismo puesto podría estar en las dos, el resumen las muestra por separado.
+- Si no cuadra, **solo se avisa** («faltan N» / «sobran N»); nunca se bloquea el guardado.
+- Varios horarios el mismo día (por ejemplo sábado 1 pm y 7 pm) → **horarios con hora**. El cupo de cada entrada se define por horario y se puede ajustar en cada servicio.
+- Cuenta **quien tiene la posición de conteo** de esa entrada en la planeación publicada (y el coordinador o supervisor del grupo). **Un solo contador por entrada**, compartido en vivo.
+- Sin señal, el contador **sigue contando y sincroniza** al volver; avisa que está sin conexión.
+- El conteo digital **se guarda solo** como total de la ubicación (suma de sus entradas).
+
+**Etapas** (cada una: migración aditiva, pruebas de permisos, e2e, regresión, README y push)
+1. **Reservas editables.** Vista para ver y **editar** las reservas de puestos: administrador y cabeza (todas las sedes) y líder (su sede). Los coordinadores y supervisores solo las ven.
+2. **Horarios con hora.** Permitir varios horarios el mismo día en una sede (hoy es uno por día y franja), sin romper la rotación, la planeación ni los conteos existentes.
+3. **Entradas.** Cada ubicación tiene entradas (nombre, cupo estándar por horario y nota de quiénes ingresan). Las crean y editan el administrador, la cabeza y el líder de su sede; el cupo se ajusta por servicio.
+4. **Cuadre.** Resumen por ubicación y servicio: cupos + reservas de zona + reservas del rol frente al aforo, con «cuadra / faltan N / sobran N», al configurar y en Conteos.
+5. **Posición de conteo.** Marcar una posición del manual como de conteo y ligarla a una entrada.
+6. **Contador digital.** Vista aparte en pantalla completa para celular, instalable: botón grande para sumar, botón para restar, máximo conocido (el cupo), aviso al acercarse y al llegar al tope, pantalla encendida, modo sin conexión con sincronización. Cada toque queda registrado; el total de la ubicación se actualiza solo y alimenta totales y reportes.
+
+**Riesgos a vigilar**
+- El contador lo usa un voluntario, que hoy no puede escribir conteos: se hace con funciones de la base de datos que validan la posición asignada y el servicio de hoy.
+- Cambiar los horarios toca la rotación y la planeación: se hace aparte y con regresión completa.
+- El total automático debe respetar la capacidad y dejar el historial de cambios.
+
 ## 9. Lo que se necesita crear (cuenta del ministerio o del admin)
 1. Proyecto en Supabase. Se toman las variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY`.
 2. Cliente OAuth en Google Cloud (pantalla de consentimiento y redirect URI de Supabase), configurado en Supabase → Auth → Google.
