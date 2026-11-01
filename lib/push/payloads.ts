@@ -9,7 +9,7 @@ export function supportRequestPayload(requestId: string, r: { group_name: string
   return {
     title: "Piden apoyo en tu sede",
     body: `${r.group_name} necesita ${missing} ${missing === 1 ? "persona" : "personas"} · ${formatServiceDateShort(r.service_date)}`,
-    url: "/servicio",
+    url: "/servicio?tab=apoyos",
     tag: `support-${requestId}`,
   };
 }
@@ -18,7 +18,7 @@ export function pendingCountsPayload(r: { event_id: string; service_date: string
   return {
     title: "Faltan los conteos del servicio",
     body: `${r.site_name} · ${serviceLabel(r.day, r.shift)} · ${formatServiceDateShort(r.service_date)}`,
-    url: `/servicio/${r.event_id}`,
+    url: `/servicio/${r.event_id}?tab=conteos`,
     tag: `counts-${r.event_id}`,
   };
 }

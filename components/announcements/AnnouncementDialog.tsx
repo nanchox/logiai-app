@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { fromInputValue, toInputValue } from "@/lib/announcements/dates";
-import { deleteAnnouncement, MAX_LINKS, saveAnnouncement } from "@/lib/announcements/mutations";
-import { CATEGORIES, CATEGORY_LABEL, scopeKindOf, type AnnouncementItem, type Category, type ScopeKind } from "@/lib/announcements/types";
+import { deleteAnnouncement, MAX_IMAGES, MAX_LINKS, saveAnnouncement } from "@/lib/announcements/mutations";
+import { CATEGORIES, CATEGORY_LABEL, scopeKindOf, type AnnouncementImage, type AnnouncementItem, type Category, type ScopeKind } from "@/lib/announcements/types";
 import { DAY_LABEL } from "@/lib/labels";
 import { groupLabel } from "@/lib/people/labels";
 import type { GroupItem, SiteItem, Viewer } from "@/lib/people/types";
@@ -49,6 +49,8 @@ function Form({ item, viewer, sites, groups, onClose, onSaved }: Props) {
   const [startsAt, setStartsAt] = useState(item ? toInputValue(item.startsAt) : "");
   const [endsAt, setEndsAt] = useState(toInputValue(item?.endsAt ?? null));
   const [links, setLinks] = useState((item?.links ?? []).map((l) => ({ ...l, tmp: l.id })));
+  const [keptImages, setKeptImages] = useState<AnnouncementImage[]>(item?.images ?? []);
+  const [newImages, setNewImages] = useState<{ key: string; file: File; preview: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,6 +76,7 @@ function Form({ item, viewer, sites, groups, onClose, onSaved }: Props) {
       await saveAnnouncement(sb, {
         title, body, category, pinned, startsAt: starts, endsAt: ends,
         scope: { kind, siteId, day, groupId },
+        keepImages: keptImages, newImages: newImages.map((n) => n.file),
         links: links.filter((l) => l.label.trim() || l.url.trim()).map(({ label: lb, url }) => ({ label: lb, url })),
       }, item?.id);
       onSaved();
@@ -104,7 +107,7 @@ function Form({ item, viewer, sites, groups, onClose, onSaved }: Props) {
         </div>
         <div>
           <label className={label} htmlFor="an-body">Mensaje</label>
-          <textarea id="an-body" className={`${input} min-h-32`} value={body} maxLength={5000} onChange={(e) => setBody(e.target.value)} placeholder="Los enlaces que escribas aquí se podrán abrir." />
+          <textarea id="an-body" className={`${input} min-h-32`} value={body} maxLength={5000} onChange={(e) => setBody(e.target.value)} placeholder="Los enlaces que escribas aquí se abrirán dentro de la aplicación." />
         </div>
 
         <fieldset className="space-y-3 rounded-xl border border-line p-3">
@@ -141,7 +144,51 @@ function Form({ item, viewer, sites, groups, onClose, onSaved }: Props) {
         </fieldset>
 
         <fieldset className="space-y-3 rounded-xl border border-line p-3">
+          <legend className="px-1 text-xs font-bold uppercase tracking-wider text-muted">Imágenes (opcional)</legend>
+          <p className="text-sm text-muted">Hasta {MAX_IMAGES} imágenes de máximo 1 MB cada una. Las que pesen más se reducen solas. Se ven directamente en la novedad.</p>
+          {(keptImages.length > 0 || newImages.length > 0) && (
+            <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Imágenes de la novedad">
+              {keptImages.map((im, i) => (
+                <li key={im.id} className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- imagen firmada y privada */}
+                  <img src={im.url} alt={`Imagen actual ${i + 1}`} className="h-24 w-full rounded-lg border border-line object-cover" />
+                  <button type="button" className={`${btnDanger} absolute right-1 top-1 !px-2 !py-0.5`} aria-label={`Quitar imagen actual ${i + 1}`} onClick={() => setKeptImages(keptImages.filter((x) => x.id !== im.id))}>✕</button>
+                </li>
+              ))}
+              {newImages.map((n, i) => (
+                <li key={n.key} className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local */}
+                  <img src={n.preview} alt={`Imagen nueva ${i + 1}`} className="h-24 w-full rounded-lg border border-line object-cover" />
+                  <button type="button" className={`${btnDanger} absolute right-1 top-1 !px-2 !py-0.5`} aria-label={`Quitar imagen nueva ${i + 1}`} onClick={() => { URL.revokeObjectURL(n.preview); setNewImages(newImages.filter((x) => x.key !== n.key)); }}>✕</button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {keptImages.length + newImages.length < MAX_IMAGES && (
+            <label className={`${btn} inline-block cursor-pointer`}>
+              ＋ Agregar imagen
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                className="sr-only"
+                aria-label="Agregar imágenes"
+                onChange={(e) => {
+                  const room = MAX_IMAGES - keptImages.length - newImages.length;
+                  const files = Array.from(e.target.files ?? []);
+                  e.target.value = "";
+                  const ok = files.filter((f) => /^image\/(png|jpe?g|webp)$/.test(f.type));
+                  setError(ok.length < files.length ? "Solo se admiten imágenes JPG, PNG o WebP." : files.length > room ? `Solo caben ${MAX_IMAGES} imágenes.` : null);
+                  setNewImages([...newImages, ...ok.slice(0, room).map((file) => ({ key: crypto.randomUUID(), file, preview: URL.createObjectURL(file) }))]);
+                }}
+              />
+            </label>
+          )}
+        </fieldset>
+
+        <fieldset className="space-y-3 rounded-xl border border-line p-3">
           <legend className="px-1 text-xs font-bold uppercase tracking-wider text-muted">Enlaces (opcional)</legend>
+          <p className="text-sm text-muted">Los enlaces se abren en una ventana dentro de la aplicación.</p>
           {links.map((l, i) => (
             <div key={l.tmp} className="flex flex-wrap gap-2">
               <input className={`${input} min-w-40 flex-1`} aria-label={`Texto del enlace ${i + 1}`} placeholder="Programa del culto" value={l.label} maxLength={80} onChange={(e) => setLinks(links.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />

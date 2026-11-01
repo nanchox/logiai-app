@@ -7,10 +7,11 @@ import { CountPanel } from "@/components/counts/CountPanel";
 import { SupportPanel } from "@/components/support/SupportPanel";
 import { PlanEditor } from "@/components/service/PlanEditor";
 import { StatusBadges } from "@/components/service/RotationAdmin";
+import { Tabs, pickTab, type TabItem } from "@/components/service/Tabs";
 import { requireUser } from "@/lib/auth";
 import { serviceLabel } from "@/lib/labels";
 import { formatServiceDate } from "@/lib/service/dates";
-import { loadCountLocations, loadCountLog, loadCounts, loadGuides } from "@/lib/counts/load";
+import { loadCountLocations, loadCountLog, loadCounts, loadGuides, loadReservationDefaults, loadReservationOverrides, loadReservationZones } from "@/lib/counts/load";
 import { canCountNow, countWindow } from "@/lib/counts/window";
 import { addDays, todayCo } from "@/lib/service/dates";
 import { loadEvent, loadEvents, loadPlan, loadPlanPositions, loadRotationGroups } from "@/lib/service/load";
@@ -20,8 +21,9 @@ import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Servicio" };
 
-export default async function ServicePage({ params }: PageProps<"/servicio/[id]">) {
+export default async function ServicePage({ params, searchParams }: PageProps<"/servicio/[id]">) {
   const { id } = await params;
+  const { tab: wanted } = await searchParams;
   const user = await requireUser();
   const supabase = await createClient();
   const event = /^[0-9a-f-]{36}$/i.test(id) ? await loadEvent(supabase, id) : null;
@@ -41,18 +43,32 @@ export default async function ServicePage({ params }: PageProps<"/servicio/[id]"
   const [request] = await Promise.all([isNext ? loadEventRequest(supabase, event.id) : Promise.resolve(null)]);
   const applications = request ? await loadApplications(supabase, request.id) : [];
   // Conteos: la guía la ven quienes sirven ese día; los totales, quienes planifican el servicio.
-  const [guides, countLocations, counts, countLog] = event.status === "programado" && event.groupId
+  const [guides, countLocations, counts, countLog, zones, rsvDefaults, rsvOverrides] = event.status === "programado" && event.groupId
     ? await Promise.all([
         loadGuides(supabase, event.siteId),
         loadCountLocations(supabase, event.siteId),
         canPlan ? loadCounts(supabase, [event.id]) : Promise.resolve([]),
         canManage ? loadCountLog(supabase, event.id) : Promise.resolve([]),
+        canPlan ? loadReservationZones(supabase, event.siteId) : Promise.resolve([]),
+        canPlan ? loadReservationDefaults(supabase) : Promise.resolve([]),
+        canPlan ? loadReservationOverrides(supabase, event.id) : Promise.resolve([]),
       ])
-    : [[], [], [], []];
+    : [[], [], [], [], [], [], []];
   const guide = guides.find((g) => g.day === event.day) ?? null;
   const today = todayCo();
   // Quien apoya no ve el nombre de un grupo ajeno con sus permisos normales.
   if (event.groupId && !event.groupName) event.groupName = ((await supabase.rpc("event_group_name", { p_event: event.id })).data as string | null) ?? null;
+
+  // Secciones del servicio, en pestañas (la dirección ?tab= se puede compartir): posiciones, apoyos, conteos y administración.
+  const live = event.status === "programado" && !!event.groupId;
+  const pendingApps = applications.filter((a) => a.status === "pendiente").length;
+  const tabs: TabItem[] = [
+    ...(live ? [{ id: "posiciones", label: "Posiciones" }] : []),
+    ...(live && canPlan && isNext ? [{ id: "apoyos", label: "Apoyos", badge: pendingApps }] : []),
+    ...(live ? [{ id: "conteos", label: "Conteos" }] : []),
+    ...(canManage ? [{ id: "administrar", label: "Administrar" }] : []),
+  ];
+  const tab = tabs.length ? pickTab(tabs, wanted) : "";
 
   return (
     <main className="space-y-6">
@@ -72,7 +88,9 @@ export default async function ServicePage({ params }: PageProps<"/servicio/[id]"
         </p>
       )}
 
-      {canManage && (
+      {tabs.length > 1 && <Tabs tabs={tabs} current={tab} base={`/servicio/${event.id}`} />}
+
+      {tab === "administrar" && canManage && (
         <EventManage
           event={event}
           groups={groups.filter((g) => g.slotId === event.slotId)}
@@ -81,10 +99,14 @@ export default async function ServicePage({ params }: PageProps<"/servicio/[id]"
         />
       )}
 
-      {event.status === "programado" && event.groupId && (
+      {tab === "apoyos" && canPlan && isNext && <SupportPanel event={event} people={people} request={request} applications={applications} positions={positions} />}
+
+      {tab === "conteos" && live && (
+        <CountPanel eventId={event.id} date={event.date} day={event.day} locations={countLocations} counts={counts} guide={guide} canSeeCounts={canPlan} canCount={canPlan && canCountNow(event.date, today, canManage)} window={countWindow(event.date, today)} manager={canManage} log={countLog} zones={zones} reservationDefaults={rsvDefaults} reservations={rsvOverrides} />
+      )}
+
+      {tab === "posiciones" && live && (
         <>
-          {canPlan && isNext && <SupportPanel event={event} people={people} request={request} applications={applications} positions={positions} />}
-          <CountPanel eventId={event.id} date={event.date} day={event.day} locations={countLocations} counts={counts} guide={guide} canSeeCounts={canPlan} canCount={canPlan && canCountNow(event.date, today, canManage)} window={countWindow(event.date, today)} manager={canManage} log={countLog} />
           <PlanEditor event={event} positions={positions} people={people} plan={plan} canPlan={canPlan} meId={user.id} />
           <FilesPanel event={event} files={plan.files} canPlan={canPlan} />
         </>

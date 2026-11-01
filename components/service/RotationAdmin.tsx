@@ -36,8 +36,8 @@ export function StatusBadges({ e }: { e: Pick<ServiceEvent, "status" | "kind" | 
 }
 
 export function RotationAdmin({
-  sites, slots, groups, events, cancellations, today, canAllSites,
-}: { sites: SiteItem[]; slots: SlotItem[]; groups: RotationGroup[]; events: ServiceEvent[]; cancellations: Cancellation[]; today: string; canAllSites: boolean }) {
+  sites, slots, groups, events, cancellations, today, canAllSites, lastDates,
+}: { sites: SiteItem[]; slots: SlotItem[]; groups: RotationGroup[]; events: ServiceEvent[]; cancellations: Cancellation[]; today: string; canAllSites: boolean; lastDates: Record<string, string> }) {
   if (!sites.length) return <p className="text-muted">No hay sedes disponibles.</p>;
   return (
     <div className="space-y-8">
@@ -45,7 +45,7 @@ export function RotationAdmin({
         <section key={site.id} aria-label={site.name} className="space-y-4">
           <h2 className="text-xl font-extrabold">{site.name}</h2>
           {slots.filter((s) => s.siteId === site.id).map((slot) => (
-            <SlotRotation key={slot.id} slot={slot} groups={groups.filter((g) => g.slotId === slot.id)} events={events.filter((e) => e.slotId === slot.id)} today={today} />
+            <SlotRotation key={slot.id} slot={slot} groups={groups.filter((g) => g.slotId === slot.id)} events={events.filter((e) => e.slotId === slot.id)} today={today} last={lastDates[slot.id] ?? null} />
           ))}
           {!slots.some((s) => s.siteId === site.id) && <p className="text-sm text-muted">Esta sede todavía no tiene horarios. Créalos en Grupos y horarios.</p>}
         </section>
@@ -55,19 +55,24 @@ export function RotationAdmin({
   );
 }
 
-function SlotRotation({ slot, groups, events, today }: { slot: SlotItem; groups: RotationGroup[]; events: ServiceEvent[]; today: string }) {
+function SlotRotation({ slot, groups, events, today, last }: { slot: SlotItem; groups: RotationGroup[]; events: ServiceEvent[]; today: string; last: string | null }) {
   const sb = useMemo(() => createClient(), []);
   const { busy, error, done, run } = useAction();
   const title = serviceLabel(slot.day, slot.shift);
   const ordered = [...groups].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "es", { numeric: true }));
-  const [range, setRange] = useState({ from: today, until: addDays(today, 84) });
+  // Se sigue desde la última fecha generada (no desde hoy): así cada vez crea fechas nuevas.
+  const startFrom = last && last >= today ? addDays(last, 1) : today;
+  const [range, setRange] = useState({ from: startFrom, until: addDays(startFrom, 83) });
   const [first, setFirst] = useState("");
   const [special, setSpecial] = useState({ date: "", group: ordered[0]?.id ?? "", note: "" });
   const upcoming = events.slice(0, 8);
 
   return (
     <article className="space-y-5 rounded-2xl border border-line bg-surface p-5" aria-label={`Rotación ${title}`}>
-      <h3 className="text-lg font-extrabold text-link">{title}</h3>
+      <div className="flex flex-wrap items-baseline gap-x-3">
+        <h3 className="text-lg font-extrabold text-link">{title}</h3>
+        <span className="text-sm text-muted">{last ? `Generada hasta el ${formatServiceDateShort(last)}` : "Sin fechas generadas"}</span>
+      </div>
       <ErrorText error={error} />
       {done && <p role="status" className="rounded-lg border border-primary/50 bg-primary/10 p-2 text-sm">{done}</p>}
 
@@ -92,7 +97,12 @@ function SlotRotation({ slot, groups, events, today }: { slot: SlotItem; groups:
 
           <form className="grid gap-3 sm:grid-cols-4" aria-label={`Generar servicios de ${title}`} onSubmit={(e) => {
             e.preventDefault();
-            run(async () => describeGenerate(await generateEvents(sb, slot.id, range.from, range.until, first)));
+            run(async () => {
+              const msg = describeGenerate(await generateEvents(sb, slot.id, range.from, range.until, first));
+              // Para la siguiente vez, el rango avanza solo: desde el día siguiente al que se acaba de generar.
+              setRange({ from: addDays(range.until, 1), until: addDays(range.until, 84) });
+              return msg;
+            });
           }}>
             <div><label className={label} htmlFor={`f-${slot.id}`}>Desde</label><input id={`f-${slot.id}`} type="date" className={input} value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} required /></div>
             <div><label className={label} htmlFor={`u-${slot.id}`}>Hasta</label><input id={`u-${slot.id}`} type="date" className={input} value={range.until} onChange={(e) => setRange({ ...range, until: e.target.value })} required /></div>

@@ -6,7 +6,8 @@ El plan completo está en [`PLAN.md`](PLAN.md). Estado actual: **Fases 1 a 9** c
 - **App:** Next.js 16 (App Router) en Vercel · **Datos, login y archivos:** Supabase
 - `legacy/` — prototipo original (HTML estático) y las imágenes de mapas de Castellana
 - `supabase/migrations/` — esquema, permisos (RLS), acceso por invitación, storage y carga inicial
-- `supabase/tests/` — pruebas de permisos sobre Postgres en WASM
+- `supabase/tests/` — pruebas de permisos (RLS) sobre Postgres en WASM
+- `app/` — pantallas y rutas (`app/api/`: asistente, avisos, solicitudes de apoyo y tarea programada) · `lib/` — lógica por tema (manual, personas, novedades, servicio, apoyos, conteos, chat, avisos) · `components/` — interfaz · `public/sw.js` — service worker · `vercel.json` — tarea programada
 
 ## Puesta en marcha
 
@@ -27,8 +28,17 @@ El plan completo está en [`PLAN.md`](PLAN.md). Estado actual: **Fases 1 a 9** c
    (Aunque no lo actives, el trigger `on_auth_user_created` ya impide crear cuentas sin invitación; el hook solo da un mensaje más claro.)
 
 ### 2. Variables de entorno
-Copia `.env.example` a `.env.local` y complétalo. En Vercel agrega `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
-`SUPABASE_SERVICE_ROLE_KEY` es secreta: solo para scripts locales, nunca en Vercel ni en el navegador.
+Copia `.env.example` a `.env.local` y complétalo (cada variable está comentada ahí). En Vercel agrega:
+
+| Variable | Para qué | Dónde |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Conexión con Supabase (obligatorias) | navegador y servidor |
+| `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `CHAT_DAILY_LIMIT` | Asistente de IA (ver *Asistente*) | solo servidor |
+| `LEGAL_NAME`, `LEGAL_CITY`, `LEGAL_EMAIL`, `LEGAL_ORG` | Responsable de los datos en la política (ver *Protección de datos*) | solo servidor |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Avisos al teléfono | la pública va al navegador; la privada, solo servidor |
+| `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET` | Buscar a quién avisar y proteger la tarea programada | solo servidor |
+
+`SUPABASE_SERVICE_ROLE_KEY` es la clave más poderosa de Supabase: nunca con `NEXT_PUBLIC_`, nunca en el navegador ni en el repositorio. Lo opcional (asistente, avisos, datos legales) puede faltar: la aplicación funciona y solo no ofrece esa parte.
 
 ### 3. Imágenes de la carga inicial
 ```bash
@@ -40,7 +50,7 @@ npm run seed:assets     # sube legacy/*.png al bucket "maps"
 ```bash
 npm run dev             # http://localhost:3000
 npm run typecheck && npm run lint
-npm test                # pruebas unitarias (enlaces de YouTube) + permisos de la base de datos
+npm test                # pruebas unitarias (lógica de lib/) + permisos de la base de datos (RLS)
 ```
 
 ## Editar el manual
@@ -85,15 +95,17 @@ Noticias, cambios y avisos en **Novedades** (menú superior); los más recientes
 Cabeza de ministerio y administrador ven todo.
 
 - **Quién publica, edita y elimina:** cabeza y administrador, en cualquier alcance; el **líder de sede**, en su sede (sede, sede y día, o un grupo de su sede); el **coordinador**, solo en su grupo. Supervisores y voluntarios solo leen. Lo hace cumplir la base de datos, no solo la pantalla.
-- **Tipo** (anuncio, cambio o noticia; todos aparecen en Novedades), **fijar arriba**, hasta 5 **enlaces** (solo `https`) y los enlaces escritos dentro del texto también se pueden abrir.
+- **Tipo** (anuncio, cambio o noticia; todos aparecen en Novedades), **fijar arriba**, hasta 5 **enlaces** (solo `https`) y los enlaces escritos dentro del texto también se pueden abrir. Los enlaces se abren en **una ventana dentro de la aplicación**, con un botón «Abrir en el navegador» (algunas páginas no permiten verse incrustadas; los videos de YouTube sí). Hasta 4 **imágenes** por novedad, visibles directamente en la tarjeta (al tocarlas se ven ampliadas); pesan **máximo 1 MB**: si una es más grande, la aplicación la reduce sola antes de subirla. Se guardan en el bucket privado `announcements`.
 - **Vigencia:** se puede programar la publicación y dar una fecha de fin. Quien lo administra ve también los programados y los vencidos, marcados como tales; los demás, solo los vigentes. Las fechas se escriben y se muestran en hora de Colombia.
+- **En Inicio** las novedades recientes salen resumidas (tipo, alcance, inicio del mensaje); al tocar una se abre **su detalle completo en una ventana** (mensaje, imágenes y enlaces) sin salir de Inicio.
 - Cada novedad muestra quién la publicó, con su nombre y rol (nunca su correo).
 
 ## Rotación y servicio
 - **Rotación** (Personas → Rotación, para líder de sede, cabeza y administrador): cada horario de cada sede rota sus grupos semana a semana, de forma **independiente** a las demás sedes. El líder ordena los grupos, genera las fechas (hasta 400 días por vez) y, si agrega un grupo, vuelve a generar hacia adelante: lo ajustado a mano y los servicios especiales no se tocan, y un servicio que ya tiene planeación o archivos conserva su grupo.
 - **Cancelaciones:** una fecha cancelada **consume su turno** (ese grupo lo pierde y la rotación sigue por calendario). El líder cancela un horario o todos los de su sede; cabeza y administrador, también todas las sedes. Los coordinadores solo ven el calendario.
 - **Servicios especiales:** se crean a mano (fecha, grupo y nota) y no entran en la rotación.
-- **Mi servicio:** el próximo servicio del grupo, el calendario de las próximas 8 semanas y el historial de posiciones de cada persona (de la planeación publicada).
+- **Mi servicio:** lo principal son los **servicios activos**, marcados con «● Activo · Hoy» o «● Activo · Siguiente» (los de hoy o, si no hay, el siguiente que le toca a la persona; también donde apoya). Se organiza en pestañas: **Servicios** (activos y calendario de 8 semanas), **Apoyos**, **Conteos** (coordinación y quienes administran), **Posiciones** (historial) y **Administrar** (quien administra la sede: generar más semanas de rotación, cada vez que se necesite, y accesos a rotación y cancelaciones). La página de cada servicio usa las mismas pestañas (Posiciones, Apoyos, Conteos, Administrar) y admite enlaces directos con `?tab=`.
+- **Inicio (atajos):** supervisores, coordinadores, líderes de sede, cabezas y admin ven su servicio activo, un acceso rápido a Conteos y el manual de su sede (o el de logística, en el caso de cabezas y admin).
 - **Planeación de posiciones** (coordinadores y supervisores del grupo que sirve, y el líder de la sede): se asignan personas a las posiciones del manual que aplican a ese día y franja. Una posición puede tener varias personas y una persona varias posiciones; cada posición admite una nota. **Los coordinadores coordinan el grupo y no ocupan posiciones**; las posiciones de supervisor son solo para supervisores. El **borrador** lo ven solo coordinadores y supervisores; al **publicar**, todo el grupo. Se puede copiar la planeación del servicio anterior como punto de partida. No hay confirmación de asistencia.
 - **Programación en archivo:** en lugar de (o además de) la planeación en la plataforma, se puede subir la programación como PDF, Excel o imagen (hasta 5 archivos de 10 MB por servicio). La ve todo el grupo con enlaces firmados.
 
@@ -119,7 +131,7 @@ Cuando en un servicio planeado falta gente, el grupo suma apoyo de otros grupos 
 - **Solicitud de apoyo:** quien planifica pide «N personas» (con nota y posiciones opcionales). Solo la ven quienes pueden apoyar, en **Inicio** y en **Mi servicio** (con un contador en el menú). La persona se postula con «Quiero apoyar» y el coordinador o supervisor **aprueba o rechaza**. No se pasa del cupo; la solicitud deja de verse cuando se llena, se cancela o el servicio deja de ser el próximo, y se reabre si un apoyo se retira.
 - **Un apoyo aprobado** es parte del servicio ese día: puede recibir posiciones (las de supervisor, solo si es supervisor), ve la planeación publicada y los archivos, y el servicio aparece en su Mi servicio e historial como «Apoyo a Grupo X». Puede **retirarse solo hasta el día anterior**; ese día o después debe avisar a su coordinador.
 - **El grupo de origen se entera:** el coordinador ve en Mi servicio quiénes de su grupo apoyan a otros y cuándo (sin aprobar nada).
-- **Avisos:** dentro de la aplicación. Las notificaciones al teléfono llegan con la PWA en la fase 8.
+- **Avisos:** dentro de la aplicación y, para las solicitudes de apoyo, también al teléfono si la persona activó los avisos (ver *Aplicación instalable y avisos al teléfono*).
 - Todas las reglas las hace cumplir la base de datos (funciones con permisos), no solo la pantalla.
 
 ## Conteos y totales
@@ -128,6 +140,8 @@ Menú **Conteos** (líder de sede, cabeza, administrador, coordinadores y superv
 - **Capacidad y guías** (Conteos → Capacidad y guías de conteo; líder de su sede, cabeza y administrador): el total de **sillas de cada ubicación** (una cifra para todos los servicios; vacía si esa ubicación no se cuenta) y, por **día de la semana**, una **imagen** que indica cómo y dónde contar en cada entrada. La imagen se repite cada semana hasta que se reemplace o se quite y aplica a todos los horarios de ese día. Las **entradas no se registran**: la imagen es la guía.
 - **Guía en el servicio:** la ve en la página del servicio el grupo que sirve ese día (y quienes apoyan), el líder, la cabeza y el administrador. Se guarda en un almacenamiento privado, con enlaces firmados.
 - **Captura:** en la página del servicio, el **coordinador o un supervisor del grupo que sirvió** registra **un total final por ubicación**. El total **no puede superar la capacidad** (la pantalla avisa y la base de datos lo rechaza); una ubicación sin capacidad no se puede contar. Se guarda todo o nada. Solo se puede desde el día del servicio y hasta el **final del día siguiente** (24 horas); después **solo corrige el líder** (o el administrador). Todo cambio queda registrado (quién, cuándo, valor anterior y nuevo) y lo ve el líder, la cabeza y el administrador.
+- **Reservas por zona** (puestos reservados en una fila de cada zona del manual): el líder define un **valor predeterminado por zona y día de la semana** en Conteos → Capacidad y guías (se repite cada semana). El día del servicio, el coordinador o el supervisor del grupo puede **cambiar el número solo para ese servicio** (queda marcado «Ajustado»; dejarlo vacío vuelve al predeterminado) y reservar también en zonas sin predeterminado. Mismo plazo y mismos permisos que los conteos (desde el día del servicio y hasta el final del día siguiente; después, el líder). Las reservas son un dato informativo: no cambian la validación de la capacidad.
+- **Servicio de hoy en Inicio:** el día del servicio, el coordinador y el supervisor del grupo ven en Inicio una tarjeta con **Registrar conteos y reservas** (en una ventana, sin salir de Inicio), **Ver guía de conteo** (la imagen, en grande), el **manual de la sede** y el acceso al servicio.
 - **Recordatorio:** si faltan los conteos de un servicio reciente, Mi servicio se lo recuerda al coordinador y a los supervisores del grupo.
 - **Reporte** (solo en pantalla): por **servicio**, por **día** y por **semana de lunes a domingo**, con los totales por ubicación, capacidad y porcentaje de ocupación (calculado sobre las ubicaciones que sí se contaron), y una comparación con la semana anterior. El líder ve su sede; la cabeza y el administrador, todas, con el total consolidado; coordinadores y supervisores ven **solo los servicios de su grupo**. Los voluntarios no ven los totales.
 - Los totales no son datos personales; si la persona que contó se elimina, se conservan sin su nombre.
@@ -162,4 +176,4 @@ Cada fase nueva trae migraciones. El orden seguro es:
 1. Publica primero el código nuevo (fusiona el pull request y espera el despliegue de Vercel).
 2. Luego aplica las migraciones: `npx supabase db push`.
 
-Notas por fase: la `20261019000001_people.sql` quita el correo de `profiles` y lo mueve a `profile_private`; la `20261020000001_announcements.sql` crea los anuncios (hasta aplicarla, el inicio muestra «No hay anuncios por ahora»); la `20261021000001_rotation.sql` crea la rotación, la planeación y el bucket privado `schedules` (hasta aplicarla, Mi servicio y Rotación no funcionan); la `20261022000001_chat.sql` crea la búsqueda y el límite diario del asistente; la `20261023000001_privacy.sql` crea la constancia de aceptación y la baja de cuenta (es aditiva: hasta aplicarla, la aplicación no pide aceptar los textos); la `20261025000001_support.sql` crea las ausencias, los apoyos y las solicitudes (aditiva; hasta aplicarla, Mi servicio funciona igual y simplemente no hay solicitudes); la `20261026000001_counts.sql` agrega la capacidad de las ubicaciones, las guías de conteo (bucket privado `counts`) y los totales (aditiva: hasta aplicarla, el menú Conteos no tiene datos); la `20261027000001_push.sql` crea los dispositivos de avisos, las preferencias y las funciones del servidor (aditiva); la `20261024000001_minimal_data.sql` deja de guardar la foto de Google y borra las ya guardadas (publica primero el código nuevo, que ya no la pide, y luego aplica esta migración).
+Notas por fase: la `20261019000001_people.sql` quita el correo de `profiles` y lo mueve a `profile_private`; la `20261020000001_announcements.sql` crea los anuncios (hasta aplicarla, el inicio muestra «No hay anuncios por ahora»); la `20261021000001_rotation.sql` crea la rotación, la planeación y el bucket privado `schedules` (hasta aplicarla, Mi servicio y Rotación no funcionan); la `20261022000001_chat.sql` crea la búsqueda y el límite diario del asistente; la `20261023000001_privacy.sql` crea la constancia de aceptación y la baja de cuenta (es aditiva: hasta aplicarla, la aplicación no pide aceptar los textos); la `20261025000001_support.sql` crea las ausencias, los apoyos y las solicitudes (aditiva; hasta aplicarla, Mi servicio funciona igual y simplemente no hay solicitudes); la `20261026000001_counts.sql` agrega la capacidad de las ubicaciones, las guías de conteo (bucket privado `counts`) y los totales (aditiva: hasta aplicarla, el menú Conteos no tiene datos); la `20261029000001_reservations.sql` crea las reservas por zona (predeterminado por día y ajuste por servicio; aditiva: hasta aplicarla, los conteos funcionan sin reservas); la `20261027000001_push.sql` crea los dispositivos de avisos, las preferencias y las funciones del servidor (aditiva); la `20261028000001_announcement_images.sql` crea las imágenes de las novedades y su bucket privado `announcements` (aditiva: hasta aplicarla, las novedades funcionan sin imágenes); la `20261024000001_minimal_data.sql` deja de guardar la foto de Google y borra las ya guardadas (publica primero el código nuevo, que ya no la pide, y luego aplica esta migración).

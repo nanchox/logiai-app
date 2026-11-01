@@ -42,3 +42,18 @@ export async function prepareMap(file: File): Promise<PreparedImage> {
   if (blob.size > MAP_LIMIT) throw new Error("La imagen pesa demasiado incluso reducida. Usa una de menos de 9 MB.");
   return { bytes: await blob.arrayBuffer(), contentType: "image/jpeg", ext: "jpg" };
 }
+
+export const ANNOUNCEMENT_IMAGE_LIMIT = 1024 * 1024; // el bucket admite 1 MB por imagen
+
+/** Imagen de una novedad: máximo 1 MB. Si el archivo ya cabe se conserva; si no, se reduce (menos tamaño y calidad) hasta que quepa. */
+export async function prepareAnnouncementImage(file: File): Promise<PreparedImage> {
+  if (EXT[file.type] && file.size <= ANNOUNCEMENT_IMAGE_LIMIT) {
+    return { bytes: await file.arrayBuffer(), contentType: file.type, ext: EXT[file.type] };
+  }
+  const bitmap = await decode(file);
+  for (const [side, quality] of [[1600, 0.82], [1600, 0.65], [1280, 0.7], [1024, 0.6], [800, 0.55]] as const) {
+    const blob = await toBlob(bitmap, side, "image/jpeg", quality);
+    if (blob.size <= ANNOUNCEMENT_IMAGE_LIMIT) return { bytes: await blob.arrayBuffer(), contentType: "image/jpeg", ext: "jpg" };
+  }
+  throw new Error("La imagen no se pudo reducir a menos de 1 MB. Prueba con otra más sencilla.");
+}

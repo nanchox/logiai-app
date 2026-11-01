@@ -2,3 +2,6 @@ export type CountLocation = { id: string; siteId: string; name: string; kind: st
 export type CountGuide = { siteId: string; day: string; path: string; url: string | null; note: string | null; updatedAt: string };
 export type CountRow = { eventId: string; locationId: string; total: number };
 export type CountLogEntry = { changedAt: string; name: string | null; locationName: string; oldTotal: number | null; newTotal: number | null };
+export type ReservationZone = { id: string; siteId: string; locationName: string; name: string; sort: number };
+export type ReservationDefault = { zoneId: string; day: string; seats: number };
+export type ReservationOverride = { zoneId: string; seats: number };

@@ -1,5 +1,7 @@
 import { formatDateTime } from "@/lib/announcements/dates";
 import { CATEGORY_LABEL, scopeLabel, type AnnouncementItem, type Category } from "@/lib/announcements/types";
+import { ExternalLink } from "./ExternalLink";
+import { ImageGallery } from "./ImageGallery";
 import { LinkedText } from "./LinkedText";
 
 const CATEGORY_STYLE: Record<Category, string> = {
@@ -28,13 +30,15 @@ export function AnnouncementCard({ a, actions, compact }: { a: AnnouncementItem;
       <h2 className={`mt-2 font-extrabold text-link ${compact ? "text-base" : "text-xl"}`}>{a.title}</h2>
       {a.body && !compact && <LinkedText text={a.body} className="mt-2" />}
 
+      {!compact && <ImageGallery images={a.images} title={a.title} />}
+
       {a.links.length > 0 && !compact && (
         <ul className="mt-3 flex flex-wrap gap-2" aria-label="Enlaces">
           {a.links.map((l) => (
             <li key={l.id}>
-              <a href={l.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-line bg-bg px-3 py-2 text-sm font-semibold no-underline hover:border-primary">
+              <ExternalLink href={l.url} className="inline-flex items-center gap-1 rounded-lg border border-line bg-bg px-3 py-2 text-sm font-semibold no-underline hover:border-primary">
                 {l.label} <span aria-hidden>↗</span>
-              </a>
+              </ExternalLink>
             </li>
           ))}
         </ul>

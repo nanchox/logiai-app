@@ -54,7 +54,7 @@ export function SupportRequests({ requests, compact }: { requests: OpenRequest[]
           );
         })}
       </ul>
-      {compact && <p className="text-sm"><Link href="/servicio">Ver todas en Mi servicio →</Link></p>}
+      {compact && <p className="text-sm"><Link href="/servicio?tab=apoyos">Ver todas en Mi servicio →</Link></p>}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { addDays } from "@/lib/service/dates";
 import { loadEvents } from "@/lib/service/load";
 import type { ServiceEvent } from "@/lib/service/types";
-import type { CountGuide, CountLocation, CountLogEntry, CountRow } from "./types";
+import type { CountGuide, CountLocation, CountLogEntry, CountRow, ReservationDefault, ReservationOverride, ReservationZone } from "./types";
 
 /** Ubicaciones visibles (de las sedes que la persona ve) con su capacidad. */
 export async function loadCountLocations(supabase: SupabaseClient, siteId?: string): Promise<CountLocation[]> {
@@ -58,4 +58,26 @@ export async function loadPendingCounts(supabase: SupabaseClient, groupId: strin
   const locs = await loadCountLocations(supabase);
   const hasCapacity = new Set(locs.filter((l) => l.capacity !== null).map((l) => l.siteId));
   return recent.filter((e) => !done.has(e.id) && hasCapacity.has(e.siteId));
+}
+
+/** Zonas (con su ubicación) de las sedes que la persona ve, para las reservas. */
+export async function loadReservationZones(supabase: SupabaseClient, siteId?: string): Promise<ReservationZone[]> {
+  const { data } = await supabase.from("zones").select("id, name, sort, locations!inner(name, site_id, sort)");
+  type Row = { id: string; name: string; sort: number; locations: { name: string; site_id: string; sort: number } };
+  return ((data ?? []) as unknown as Row[])
+    .filter((z) => !siteId || z.locations.site_id === siteId)
+    .sort((a, b) => a.locations.sort - b.locations.sort || a.locations.name.localeCompare(b.locations.name, "es") || a.sort - b.sort || a.name.localeCompare(b.name, "es"))
+    .map((z) => ({ id: z.id, siteId: z.locations.site_id, locationName: z.locations.name, name: z.name, sort: z.sort }));
+}
+
+/** Puestos reservados predeterminados por zona y día de la semana (solo llegan los que la persona puede ver). */
+export async function loadReservationDefaults(supabase: SupabaseClient): Promise<ReservationDefault[]> {
+  const { data } = await supabase.from("zone_reservation_defaults").select("zone_id, day, seats");
+  return (data ?? []).map((r) => ({ zoneId: r.zone_id, day: r.day, seats: r.seats }));
+}
+
+/** Ajustes de un servicio (los ven quienes lo planifican). */
+export async function loadReservationOverrides(supabase: SupabaseClient, eventId: string): Promise<ReservationOverride[]> {
+  const { data } = await supabase.from("service_reservations").select("zone_id, seats").eq("event_id", eventId);
+  return (data ?? []).map((r) => ({ zoneId: r.zone_id, seats: r.seats }));
 }

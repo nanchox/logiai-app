@@ -109,3 +109,11 @@ export async function loadHistory(supabase: SupabaseClient, userId: string, limi
     .sort((a, b) => b.date.localeCompare(a.date) || a.positionCode.localeCompare(b.positionCode, "es", { numeric: true }))
     .slice(0, limit);
 }
+
+/** Última fecha de rotación ya generada de cada horario (para seguir generando desde ahí). */
+export async function loadLastRotationDates(supabase: SupabaseClient): Promise<Record<string, string>> {
+  const { data } = await supabase.from("service_events").select("slot_id, service_date").eq("kind", "rotacion").order("service_date", { ascending: false }).limit(2000);
+  const last: Record<string, string> = {};
+  for (const r of data ?? []) if (!(r.slot_id in last)) last[r.slot_id] = r.service_date;
+  return last;
+}
