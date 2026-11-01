@@ -1744,3 +1744,105 @@ test('reservas por zona · predeterminado por día (lo define el líder) y ajust
   assert.equal(await count('service_reservations'), 0);
   assert.equal(await count('zone_reservation_defaults'), 0);
 });
+
+test('rol Reservas · quién lo da, qué puede hacer (solo registrar reservas de sus sedes) y quién las ve', async () => {
+  const zC = (await one(`insert into public.zones (location_id, name) values ($1, 'Zona de reservas Campestre') returning id`, [U.locA])).id;
+  const zN = (await one(`insert into public.zones (location_id, name) values ($1, 'Zona de reservas Castellana') returning id`, [U.locCas])).id;
+  const invRes = (uid, email, sites) => as(uid, () => db.query(`insert into public.invitations (email, reserver_site_ids) values ($1, $2)`, [email, sites]));
+  // Quién invita: quien administra todas las sedes elegidas
+  await invRes(U.liderCamp, 'resv@x.com', [U.sCamp]);
+  await denied(() => invRes(U.liderCamp, 'resv2@x.com', [U.sCas]), /row-level security/, 'el líder de otra sede no');
+  await denied(() => invRes(U.liderCamp, 'resv3@x.com', [U.sCamp, U.sCas]), /row-level security/, 'ni de una sede ajena entre varias');
+  await denied(() => invRes(U.cR1, 'resv4@x.com', [U.sCamp]), /row-level security/, 'el coordinador no');
+  await denied(() => invRes(U.vR1, 'resv5@x.com', [U.sCamp]), /row-level security/);
+  await invRes(U.admin, 'resv6@x.com', [U.sCas]);
+  await signup('resv', 'resv@x.com');
+  await signup('resvCas', 'resv6@x.com');
+  assert.equal(await count('site_reservers', `user_id = '${U.resv}'`), 1, 'el alta le da el rol en su sede');
+  const profile = await one(`select is_admin, is_head from public.profiles where user_id = $1`, [U.resv]);
+  assert.deepEqual(profile, { is_admin: false, is_head: false });
+  assert.equal(await count('memberships', `user_id = '${U.resv}'`), 0, 'no necesita un grupo');
+  // El líder de su sede ve la invitación aceptada, su perfil y su correo; otro líder no
+  assert.equal(await as(U.liderCamp, () => count('site_reservers')), 1);
+  assert.equal(await as(U.liderNogal2, () => count('site_reservers')), 0);
+  assert.equal((await as(U.liderCamp, () => rows(`select email from public.profile_private where user_id = $1`, [U.resv]))).length, 1);
+  assert.equal((await as(U.liderNogal2, () => rows(`select email from public.profile_private where user_id = $1`, [U.resv]))).length, 0);
+  assert.equal((await as(U.liderCamp, () => rows(`select full_name from public.profiles where user_id = $1`, [U.resv]))).length, 1);
+
+  // Zonas disponibles: solo las de sus sedes, sin ver el manual
+  const zonesOf = (uid) => as(uid, async () => (await rows(`select zone_id from public.reserver_zones()`)).map((r) => r.zone_id));
+  assert.deepEqual(await zonesOf(U.resv), [zC]);
+  assert.ok((await zonesOf(U.resvCas)).length > 0 && !(await zonesOf(U.resvCas)).includes(zC), 'quien reserva en otra sede ve solo sus zonas');
+  assert.deepEqual(await as(U.resv, async () => (await rows(`select slug from public.my_reserver_sites()`)).map((r) => r.slug)), ['campestre'], 'sus sedes con nombre, aunque no lea la tabla de sedes');
+  assert.deepEqual(await as(U.vR1, async () => (await rows(`select slug from public.my_reserver_sites()`)).length), 0);
+  assert.deepEqual(await zonesOf(U.vR1), [], 'un voluntario no');
+  assert.equal(await as(U.resv, () => count('zones')), 0, 'quien solo reserva no ve las zonas del manual');
+  assert.equal(await as(U.resv, () => count('positions')), 0);
+
+  // Crear: fecha, zona, fila, puestos y para quién
+  const create = (uid, zone, date, row, seats, who) => rpc(uid, `select public.create_seat_reservation($1, $2::date, $3, $4, $5)`, [zone, date, row, seats, who]);
+  const day = async (n) => (await one(`select (public.today_co() + $1::int)::text d`, [n])).d;
+  const today = await day(0), later = await day(3), past = await day(-1), far = await day(121);
+  await create(U.resv, zC, today, 'F3', 6, 'Familia Pérez');
+  await create(U.resv, zC, later, 'A', 2, 'Invitados del pastor');
+  await denied(() => create(U.resv, zN, today, 'F3', 6, 'Otra sede'), /No puedes registrar/);
+  await denied(() => create(U.vR1, zC, today, 'F3', 6, 'x'), /No puedes registrar/);
+  await denied(() => create(U.cR1, zC, today, 'F3', 6, 'x'), /No puedes registrar/, 'ni el coordinador');
+  await denied(() => create(U.resv, zC, past, 'F3', 6, 'x'), /de hoy en adelante/);
+  await denied(() => create(U.resv, zC, far, 'F3', 6, 'x'), /de hoy en adelante/);
+  await denied(() => create(U.resv, zC, today, '  ', 6, 'x'), /Escribe la fila/);
+  await denied(() => create(U.resv, zC, today, 'x'.repeat(21), 6, 'x'), /Escribe la fila/);
+  await denied(() => create(U.resv, zC, today, 'F3', 0, 'x'), /de 1 a 10000/);
+  await denied(() => create(U.resv, zC, today, 'F3', 10001, 'x'), /de 1 a 10000/);
+  await denied(() => create(U.resv, zC, today, 'F3', 2, ''), /para quién/);
+  await denied(() => create(U.resv, zC, today, 'F3', 2, 'x'.repeat(121)), /para quién/);
+  await denied(() => as(U.resv, () => db.query(`insert into public.seat_reservations (site_id, zone_id, service_date, row_label, seats, for_whom) values ($1, $2, public.today_co(), 'A', 1, 'x')`, [U.sCamp, zC])), /permission denied/, 'solo con la función');
+  await create(U.liderCamp, zC, today, 'B2', 3, 'Visitantes');        // quien administra la sede también puede
+
+  // Quién las ve
+  // Un supervisor de la sede (los de pruebas anteriores ya no lo son)
+  await as(U.liderCamp, () => db.query(`insert into public.invitations (email, group_id, group_role) values ('supres@x.com', $1, 'supervisor')`, [U.gR2]));
+  await signup('supRes', 'supres@x.com');
+  const seen = (uid) => as(uid, async () => (await rows(`select for_whom from public.seat_reservations_for(public.today_co(), public.today_co() + 10) order by for_whom`)).map((r) => r.for_whom));
+  assert.deepEqual(await seen(U.resv), ['Familia Pérez', 'Invitados del pastor'], 'cada quien ve las suyas');
+  assert.deepEqual(await seen(U.cR1), ['Familia Pérez', 'Invitados del pastor', 'Visitantes'], 'el coordinador de la sede las ve todas');
+  assert.deepEqual(await seen(U.supRes), ['Familia Pérez', 'Invitados del pastor', 'Visitantes'], 'y un supervisor de otro grupo de la sede');
+  assert.deepEqual(await seen(U.liderCamp), ['Familia Pérez', 'Invitados del pastor', 'Visitantes']);
+  assert.deepEqual(await seen(U.admin), ['Familia Pérez', 'Invitados del pastor', 'Visitantes']);
+  assert.deepEqual(await seen(U.cabeza), ['Familia Pérez', 'Invitados del pastor', 'Visitantes']);
+  assert.deepEqual(await seen(U.vR1), [], 'un voluntario no');
+  assert.deepEqual(await seen(U.liderNogal2), [], 'otra sede no');
+  assert.deepEqual(await seen(U.resvCas), [], 'ni quien reserva en otra sede');
+  assert.equal(await as(U.vR1, () => count('seat_reservations')), 0);
+  assert.equal(await as(U.cR1, () => count('seat_reservations')), 3);
+
+  // Quitar: cada quien las suyas; el líder cualquiera
+  const del = (uid, who) => as(uid, async () => (await db.query(`delete from public.seat_reservations where for_whom = $1`, [who])).affectedRows);
+  assert.equal(await del(U.vR1, 'Familia Pérez'), 0);
+  assert.equal(await del(U.cR1, 'Familia Pérez'), 0, 'el coordinador solo las ve');
+  assert.equal(await del(U.resvCas, 'Familia Pérez'), 0);
+  assert.equal(await del(U.resv, 'Visitantes'), 0, 'no quita las de otra persona');
+  assert.equal(await del(U.resv, 'Invitados del pastor'), 1);
+  assert.equal(await del(U.liderCamp, 'Familia Pérez'), 1);
+
+  // Quitarle el rol o eliminarla: solo quien administra su sede
+  assert.equal(await as(U.liderNogal2, async () => (await db.query(`delete from public.site_reservers where user_id = $1`, [U.resv])).affectedRows), 0);
+  await denied(() => rpc(U.liderNogal2, `select public.delete_person($1)`, [U.resv]), /No tienes permiso/);
+  await denied(() => rpc(U.cR1, `select public.delete_person($1)`, [U.resv]), /No tienes permiso/);
+  assert.equal(await as(U.liderCamp, async () => (await db.query(`insert into public.site_reservers (user_id, site_id) values ($1, $2)`, [U.resvCas, U.sCamp])).affectedRows), 1, 'el líder le suma su sede');
+  assert.equal(await as(U.liderCamp, async () => (await db.query(`delete from public.site_reservers where user_id = $1 and site_id = $2`, [U.resvCas, U.sCamp])).affectedRows), 1);
+  await denied(() => as(U.vR1, () => db.query(`insert into public.site_reservers (user_id, site_id) values ($1, $2)`, [U.vR1, U.sCamp])), /row-level security/, 'nadie se da el rol a sí mismo');
+  await rpc(U.liderCamp, `select public.delete_person($1)`, [U.resv]);
+  assert.equal(await count('profiles', `user_id = '${U.resv}'`), 0);
+  assert.equal(await count('invitations', `email = 'resv@x.com'`), 0, 'y su invitación');
+  assert.equal(await count('seat_reservations', `for_whom = 'Visitantes'`), 1, 'las reservas de otras personas siguen');
+  // Si se elimina la cuenta de quien reservó, la reserva se queda sin su nombre
+  await create(U.resvCas, (await one(`select z.id from public.zones z join public.locations l on l.id = z.location_id where l.site_id = $1 limit 1`, [U.sCas])).id, today, 'Z', 1, 'Del otro');
+  await rpc(U.admin, `select public.delete_person($1)`, [U.resvCas]);
+  assert.equal(await count('seat_reservations', `for_whom = 'Del otro' and created_by is null`), 1);
+  // Quien ya tiene una invitación sin cuenta se puede quitar
+  await invRes(U.liderCamp, 'pend@x.com', [U.sCamp]);
+  assert.equal(await as(U.liderCamp, async () => (await db.query(`delete from public.invitations where email = 'pend@x.com'`)).affectedRows), 1);
+  await invRes(U.admin, 'pend2@x.com', [U.sCas]);
+  assert.equal(await as(U.liderCamp, async () => (await db.query(`delete from public.invitations where email = 'pend2@x.com'`)).affectedRows), 0, 'no las de otra sede');
+});
