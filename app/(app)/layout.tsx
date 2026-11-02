@@ -39,7 +39,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Solicitudes de apoyo que la persona puede atender y aún no ha respondido (contador del menú).
   const supa = await createClient();
   const pending = (await loadOpenRequests(supa)).filter((r) => r.myStatus === null).length;
-  const canCountToday = (await loadMyCounterEntrances(supa)).length > 0;
+  // El contador lo abren quienes tienen una posición de conteo hoy y, siempre, quienes planifican servicios (coordinadores, supervisores, líderes, cabeza y administrador).
+  const planner = user.isAdmin || user.isHead || user.leaderSites.length > 0 || (!!user.membership && ["coordinador", "supervisor"].includes(user.membership.role));
+  const canCountToday = planner || (await loadMyCounterEntrances(supa)).length > 0;
 
   return (
     <ChatProvider configured={!!process.env.OPENROUTER_API_KEY} limit={Number(process.env.CHAT_DAILY_LIMIT) || 30}>
