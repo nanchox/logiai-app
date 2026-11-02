@@ -88,6 +88,7 @@ export function PlanEditor({
                     <span className="font-bold">{p.name}</span>
                     {p.kind === "supervisor" && <span className="text-xs text-muted">Supervisor</span>}
                     {p.usesRadio && <span className="text-xs text-muted">· Radio</span>}
+                    {p.entranceName && <span className="rounded-full bg-badge px-2 py-0.5 text-xs font-bold text-on-badge">🔢 Cuenta: {p.entranceName}</span>}
                     {mine && <span className="ml-auto rounded-full bg-accent px-2 py-0.5 text-xs font-bold text-on-accent">Tú</span>}
                   </div>
 

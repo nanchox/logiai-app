@@ -17,6 +17,8 @@ export type ServiceEvent = {
   status: EventStatus;
   cancelReason: string | null;
   note: string | null;
+  /** Este servicio tiene sus propias reuniones (no las estándar del horario). */
+  meetingsCustom: boolean;
 };
 
 export type RotationGroup = { id: string; name: string; slotId: string; order: number };
@@ -29,6 +31,9 @@ export type PlanPosition = {
   kind: "supervisor" | "voluntario";
   locationName: string;
   usesRadio: boolean;
+  /** Entrada que cuenta quien ocupa la posición (posición de conteo), con su nombre. */
+  entranceId: string | null;
+  entranceName: string | null;
   sort: number;
 };
 export type PlanAssignment = { id: string; positionId: string; userId: string };

@@ -1692,7 +1692,7 @@ test('reservas por zona · predeterminado por día (lo define el líder) y ajust
   // Servicios: el de hoy de las pruebas anteriores, uno futuro y uno de hace 40 días (fuera del plazo)
   const mkEv = async (offset) => (await one(`insert into public.service_events (slot_id, service_date, group_id, kind, turn) values ($1, public.today_co() + $2::int, $3, 'rotacion', 0) returning id`, [U.slotCamp, offset, U.gR1])).id;
   const evT = U.evToday, evF = await mkEv(41), evO = await mkEv(-40);
-  const dflt = (uid, zone, day, seats) => as(uid, () => db.query(`insert into public.zone_reservation_defaults (zone_id, day, seats) values ($1, $2, $3) on conflict (zone_id, day) do update set seats = excluded.seats`, [zone, day, seats]));
+  const dflt = (uid, zone, day, seats) => as(uid, () => db.query(`insert into public.zone_reservation_defaults (zone_id, day, seats) values ($1, $2, $3) on conflict (zone_id, day, meeting_key) do update set seats = excluded.seats`, [zone, day, seats]));
   const saveRes = (uid, ev, arr) => rpc(uid, `select public.save_reservations($1, $2::jsonb)`, [ev, JSON.stringify(arr)]);
   const seats = async (uid) => as(uid, async () => (await rows(`select seats from public.service_reservations where event_id = $1`, [evT])).map((r) => r.seats));
 
@@ -1886,4 +1886,301 @@ test('reservas de puestos · quien administra la sede las edita (líder de su se
   assert.equal(await seen(U.liderNogal2), 0);
   // No se pueden editar directo en la tabla
   await denied(() => as(U.liderCamp, () => db.query(`update public.seat_reservations set seats = 99 where id = $1`, [id])), /permission denied/);
+});
+
+test('reuniones por horario · las define quien administra la sede; un servicio las personaliza o vuelve a las estándar', async () => {
+  const add = (uid, slot, time, label = null) => as(uid, () => db.query(`insert into public.slot_meetings (slot_id, start_time, label) values ($1, $2, $3)`, [slot, time, label]));
+  const list = (uid, slot) => as(uid, async () => (await rows(`select start_time::text t from public.slot_meetings where slot_id = $1 order by start_time`, [slot])).map((r) => r.t.slice(0, 5)));
+  // Quién las define
+  await add(U.liderCamp, U.slotCamp, '13:00');
+  await add(U.liderCamp, U.slotCamp, '15:00', 'Segunda');
+  await add(U.admin, U.slotCamp, '17:00');
+  await add(U.cabeza, U.slotCamp, '19:00');
+  await denied(() => add(U.cR1, U.slotCamp, '20:00'), /row-level security/, 'el coordinador no');
+  await denied(() => add(U.vR1, U.slotCamp, '20:00'), /row-level security/);
+  await denied(() => add(U.liderNogal2, U.slotCamp, '20:00'), /row-level security/, 'el líder de otra sede no');
+  await denied(() => add(U.liderCamp, U.slotCamp, '13:00'), /unique|duplicate/, 'no se repite la hora');
+  await denied(() => add(U.liderCamp, U.slotCamp, '20:00', ''), /check/, 'el nombre, si se escribe, no puede ir vacío');
+  await denied(() => add(U.liderCamp, U.slotCamp, '20:00', 'x'.repeat(41)), /check/);
+  for (const t of ['08:00', '09:00', '10:00', '11:00']) await add(U.liderCamp, U.slotCamp, t);
+  await denied(() => add(U.liderCamp, U.slotCamp, '21:00'), /máximo 8/);
+  // Quién las ve: quienes ven la sede
+  assert.deepEqual((await list(U.cR1, U.slotCamp)).slice(0, 3), ['08:00', '09:00', '10:00']);
+  assert.equal((await list(U.vR1, U.slotCamp)).length, 8);
+  assert.deepEqual(await list(U.vol1, U.slotCamp), [], 'otra sede no');
+  assert.equal(await as(U.cR1, async () => (await db.query(`delete from public.slot_meetings where start_time = '08:00'`)).affectedRows), 0);
+  assert.equal(await as(U.liderCamp, async () => (await db.query(`delete from public.slot_meetings where start_time in ('08:00', '09:00', '10:00', '11:00')`)).affectedRows), 4);
+  assert.deepEqual(await list(U.liderCamp, U.slotCamp), ['13:00', '15:00', '17:00', '19:00']);
+
+  // Servicio: hereda las estándar hasta que se personaliza
+  const ev = (await one(`insert into public.service_events (slot_id, service_date, group_id, kind, turn) values ($1, public.today_co() + 60, $2, 'rotacion', 0) returning id`, [U.slotCamp, U.gR1])).id;
+  const mine = (uid) => as(uid, async () => (await rows(`select start_time::text t, base_id is not null as heredada from public.event_meetings where event_id = $1 order by start_time`, [ev])).map((r) => `${r.t.slice(0, 5)}${r.heredada ? '*' : ''}`));
+  const ins = (uid, time) => as(uid, () => db.query(`insert into public.event_meetings (event_id, start_time) values ($1, $2)`, [ev, time]));
+  assert.equal((await one(`select meetings_custom from public.service_events where id = $1`, [ev])).meetings_custom, false);
+  await denied(() => ins(U.liderCamp, '12:00'), /Primero personaliza/, 'no se agregan reuniones sin personalizar');
+  await denied(() => rpc(U.cR1, `select public.customize_event_meetings($1)`, [ev]), /No tienes permiso/);
+  await denied(() => rpc(U.liderNogal2, `select public.customize_event_meetings($1)`, [ev]), /No tienes permiso/);
+  await rpc(U.liderCamp, `select public.customize_event_meetings($1)`, [ev]);
+  assert.deepEqual(await mine(U.liderCamp), ['13:00*', '15:00*', '17:00*', '19:00*'], 'copia las estándar');
+  assert.equal((await one(`select meetings_custom from public.service_events where id = $1`, [ev])).meetings_custom, true);
+  await rpc(U.liderCamp, `select public.customize_event_meetings($1)`, [ev]);          // repetirlo no duplica
+  assert.equal((await mine(U.liderCamp)).length, 4);
+  await ins(U.admin, '22:00');
+  await as(U.liderCamp, () => db.query(`update public.event_meetings set start_time = '14:00' where event_id = $1 and start_time = '13:00'`, [ev]));
+  await as(U.liderCamp, () => db.query(`delete from public.event_meetings where event_id = $1 and start_time = '19:00'`, [ev]));
+  assert.deepEqual(await mine(U.liderCamp), ['14:00*', '15:00*', '17:00*', '22:00']);
+  assert.deepEqual(await mine(U.cR1), ['14:00*', '15:00*', '17:00*', '22:00'], 'el grupo las ve');
+  assert.deepEqual(await mine(U.vol1), [], 'otra sede no');
+  await denied(() => ins(U.cR1, '23:00'), /row-level security/);
+  assert.deepEqual(await list(U.liderCamp, U.slotCamp), ['13:00', '15:00', '17:00', '19:00'], 'las estándar no cambian');
+  // Volver a las estándar
+  await denied(() => rpc(U.cR1, `select public.reset_event_meetings($1)`, [ev]), /No tienes permiso/);
+  await rpc(U.liderCamp, `select public.reset_event_meetings($1)`, [ev]);
+  assert.deepEqual(await mine(U.liderCamp), []);
+  assert.equal((await one(`select meetings_custom from public.service_events where id = $1`, [ev])).meetings_custom, false);
+  // Si se quita una estándar, la copia del servicio conserva la hora y pierde el vínculo; si se elimina el horario, se van sus reuniones
+  await rpc(U.liderCamp, `select public.customize_event_meetings($1)`, [ev]);
+  await as(U.liderCamp, () => db.query(`delete from public.slot_meetings where slot_id = $1 and start_time = '17:00'`, [U.slotCamp]));
+  assert.deepEqual(await mine(U.liderCamp), ['13:00*', '15:00*', '17:00', '19:00*']);
+});
+
+test('entradas · las define quien administra la sede; cupo estándar por reunión; el servicio lo ajusta quien lo cuenta', async () => {
+  const ent = (uid, loc, name, note = null) => as(uid, () => db.query(`insert into public.entrances (location_id, name, note) values ($1, $2, $3) returning id`, [loc, name, note]));
+  // Quién las crea
+  const izq = (await ent(U.liderCamp, U.locA, 'Entrada izquierda', 'Asistentes de la iglesia')).rows[0].id;
+  const der = (await ent(U.admin, U.locA, 'Entrada derecha', 'Papás')).rows[0].id;
+  await denied(() => ent(U.cR1, U.locA, 'x'), /row-level security/, 'el coordinador no');
+  await denied(() => ent(U.vR1, U.locA, 'x'), /row-level security/);
+  await denied(() => ent(U.liderNogal2, U.locA, 'x'), /row-level security/, 'el líder de otra sede no');
+  await denied(() => ent(U.liderCamp, U.locA, 'Entrada izquierda'), /unique|duplicate/);
+  await denied(() => ent(U.liderCamp, U.locA, '   '), /check/);
+  await denied(() => ent(U.liderCamp, U.locA, 'x', 'n'.repeat(201)), /check/);
+  for (let i = 0; i < 10; i++) await ent(U.liderCamp, U.locA, `Extra ${i}`);
+  await denied(() => ent(U.liderCamp, U.locA, 'Una más'), /máximo 12/);
+  await as(U.liderCamp, () => db.query(`delete from public.entrances where name like 'Extra %'`));
+  // Quién las ve
+  const seen = (uid) => as(uid, () => count('entrances'));
+  assert.equal(await seen(U.vR1), 2);
+  assert.equal(await seen(U.cR1), 2);
+  assert.equal(await seen(U.vol1), 0, 'otra sede no');
+  assert.equal(await as(U.cR1, async () => (await db.query(`delete from public.entrances where id = $1`, [izq])).affectedRows), 0);
+  assert.equal(await as(U.liderCamp, async () => (await db.query(`update public.entrances set note = 'Asistentes' where id = $1`, [izq])).affectedRows), 1);
+
+  // Cupo estándar por reunión
+  const meets = (await rows(`select id from public.slot_meetings where slot_id = $1 order by start_time`, [U.slotCamp])).map((r) => r.id);
+  assert.ok(meets.length >= 2, 'el horario tiene reuniones');
+  const [m1, m2] = meets;
+  const quota = (uid, e, m, q) => as(uid, () => db.query(`insert into public.entrance_quotas (entrance_id, meeting_id, quota) values ($1, $2, $3) on conflict (entrance_id, meeting_id) do update set quota = excluded.quota`, [e, m, q]));
+  await quota(U.liderCamp, izq, m1, 1090); await quota(U.liderCamp, der, m1, 656);
+  await quota(U.liderCamp, izq, m2, 900);
+  await denied(() => quota(U.cR1, izq, m1, 1), /row-level security/);
+  await denied(() => quota(U.liderCamp, izq, m1, -1), /check/);
+  await denied(() => quota(U.liderCamp, izq, m1, 100001), /check/);
+  const slotCas = (await one(`select id from public.service_slots where site_id = $1 limit 1`, [U.sCas])).id;
+  const mCas = (await one(`insert into public.slot_meetings (slot_id, start_time) values ($1, '10:00') returning id`, [slotCas])).id;
+  await denied(() => quota(U.liderCamp, izq, mCas, 5), /no es de la sede/, 'reunión de otra sede');
+  assert.equal(await as(U.cR1, () => count('entrance_quotas')), 3);
+  assert.equal(await as(U.vol1, () => count('entrance_quotas')), 0);
+
+  // Ajuste de un servicio (el de hoy de las pruebas anteriores, uno futuro y uno de hace 50 días)
+  const mkEv = async (n) => (await one(`insert into public.service_events (slot_id, service_date, group_id, kind, turn) values ($1, public.today_co() + $2::int, $3, 'rotacion', 0) returning id`, [U.slotCamp, n, U.gR1])).id;
+  const evFut = await mkEv(52), evOld = await mkEv(-50);
+  const adj = (uid, ev, arr) => rpc(uid, `select public.save_event_quotas($1, $2::jsonb)`, [ev, JSON.stringify(arr)]);
+  const mine = async (ev) => Object.fromEntries((await rows(`select entrance_id, meeting_id, quota from public.event_entrance_quotas where event_id = $1`, [ev])).map((r) => [`${r.entrance_id === izq ? 'izq' : 'der'}:${r.meeting_id === m1 ? 'm1' : 'm2'}`, r.quota]));
+  await adj(U.cR1, U.evToday, [{ entrance_id: izq, meeting_id: m1, quota: 1000 }, { entrance_id: der, meeting_id: m1, quota: 700 }]);
+  assert.deepEqual(await mine(U.evToday), { 'izq:m1': 1000, 'der:m1': 700 });
+  await adj(U.liderCamp, U.evToday, [{ entrance_id: izq, meeting_id: m1, quota: 1010 }]);
+  assert.equal((await mine(U.evToday))['izq:m1'], 1010, 'el líder también lo cambia');
+  await denied(() => adj(U.vR1, U.evToday, [{ entrance_id: izq, meeting_id: m1, quota: 1 }]), /No puedes cambiar los cupos/);
+  await denied(() => adj(U.cR2, U.evToday, [{ entrance_id: izq, meeting_id: m1, quota: 1 }]), /No puedes cambiar los cupos/, 'coordinador de otro grupo');
+  await denied(() => adj(U.cR1, evFut, [{ entrance_id: izq, meeting_id: m1, quota: 1 }]), /No puedes cambiar los cupos/, 'antes del día no');
+  await denied(() => adj(U.cR1, evOld, [{ entrance_id: izq, meeting_id: m1, quota: 1 }]), /No puedes cambiar los cupos/, 'pasado el plazo, el coordinador no');
+  await adj(U.liderCamp, evOld, [{ entrance_id: izq, meeting_id: m1, quota: 5 }]);
+  await denied(() => adj(U.cR1, U.evToday, [{ entrance_id: izq, meeting_id: m1, quota: -1 }]), /entero entre 0 y 100000/);
+  await denied(() => adj(U.cR1, U.evToday, [{ entrance_id: izq, meeting_id: m1, quota: '3' }]), /entero entre 0 y 100000/);
+  await denied(() => adj(U.cR1, U.evToday, [{ entrance_id: izq, meeting_id: m1, quota: 100001 }]), /entero entre 0 y 100000/);
+  await denied(() => adj(U.cR1, U.evToday, [{ entrance_id: 'x', meeting_id: m1, quota: 1 }]), /no son válidos/);
+  await denied(() => adj(U.cR1, U.evToday, { entrance_id: izq }), /no son válidos/);
+  const entCas = (await one(`insert into public.entrances (location_id, name) values ($1, 'Entrada Castellana') returning id`, [U.locCas])).id;
+  await denied(() => adj(U.cR1, U.evToday, [{ entrance_id: entCas, meeting_id: m1, quota: 1 }]), /no es de la sede/, 'entrada de otra sede');
+  await denied(() => adj(U.cR1, U.evToday, [{ entrance_id: izq, meeting_id: mCas, quota: 1 }]), /no es de este servicio/, 'reunión de otro horario');
+  await denied(() => adj(U.cR1, U.evToday, [{ entrance_id: izq, meeting_id: m2, quota: 20 }, { entrance_id: izq, meeting_id: m1, quota: -5 }]), /entero/);
+  assert.equal((await mine(U.evToday))['izq:m2'], undefined, 'todo o nada');
+  // Un valor nulo vuelve al estándar
+  await adj(U.cR1, U.evToday, [{ entrance_id: izq, meeting_id: m1, quota: null }]);
+  assert.equal((await mine(U.evToday))['izq:m1'], undefined);
+  // Servicio personalizado: sus reuniones
+  await adj(U.cR1, U.evToday, [{ entrance_id: izq, meeting_id: m2, quota: 800 }]);
+  await rpc(U.liderCamp, `select public.customize_event_meetings($1)`, [U.evToday]);
+  const custom = (await rows(`select id, base_id from public.event_meetings where event_id = $1 order by start_time`, [U.evToday]));
+  assert.ok(custom.length >= 2);
+  await denied(() => adj(U.cR1, U.evToday, [{ entrance_id: izq, meeting_id: m1, quota: 1 }]), /no es de este servicio/, 'ya no cuentan las estándar');
+  await adj(U.cR1, U.evToday, [{ entrance_id: izq, meeting_id: custom[0].id, quota: 77 }]);
+  assert.equal(await as(U.cR1, () => count('event_entrance_quotas', `meeting_id = '${custom[0].id}'`)), 1);
+  await rpc(U.liderCamp, `select public.reset_event_meetings($1)`, [U.evToday]);
+  // Directo en la tabla no se escribe
+  await denied(() => as(U.liderCamp, () => db.query(`insert into public.event_entrance_quotas (event_id, entrance_id, meeting_id, quota) values ($1, $2, $3, 1)`, [U.evToday, izq, m1])), /permission denied/);
+  // Si se elimina la entrada, se van sus cupos
+  await as(U.liderCamp, () => db.query(`delete from public.entrances where id = $1`, [der]));
+  assert.equal(await count('entrance_quotas', `entrance_id = '${der}'`), 0);
+});
+
+test('reservas por reunión · predeterminadas por zona, día y reunión; ajuste del servicio por reunión; reservas del rol por hora', async () => {
+  const zA = (await one(`insert into public.zones (location_id, name) values ($1, 'Zona por reunión') returning id`, [U.locA])).id;
+  const meets = (await rows(`select id, to_char(start_time, 'HH24:MI') t from public.slot_meetings where slot_id = $1 order by start_time`, [U.slotCamp]));
+  const [m1, m2] = [meets[0], meets[1]];
+  const dflt = (uid, meeting, seats) => as(uid, () => db.query(`insert into public.zone_reservation_defaults (zone_id, day, meeting_id, seats) values ($1, 'domingo', $2, $3) on conflict (zone_id, day, meeting_key) do update set seats = excluded.seats`, [zA, meeting, seats]));
+  const all = (z) => rows(`select to_char(m.start_time, 'HH24:MI') t, d.seats from public.zone_reservation_defaults d left join public.slot_meetings m on m.id = d.meeting_id where d.zone_id = $1 order by m.start_time nulls first`, [z]);
+  // Predeterminado para todas las reuniones del día y para una en particular
+  await dflt(U.liderCamp, null, 10);
+  await dflt(U.liderCamp, m1.id, 14);
+  await dflt(U.liderCamp, m1.id, 15);                     // actualizar
+  assert.deepEqual((await all(zA)).map((r) => [r.t, r.seats]), [[null, 10], [m1.t, 15]]);
+  await denied(() => dflt(U.cR1, m2.id, 1), /row-level security/);
+  // La reunión debe ser del mismo día y sede
+  const slotCas = (await one(`select id from public.service_slots where site_id = $1 limit 1`, [U.sCas])).id;
+  const mCas = (await one(`insert into public.slot_meetings (slot_id, start_time) values ($1, '11:00') returning id`, [slotCas])).id;
+  await denied(() => dflt(U.admin, mCas, 5), /no es de ese día/);
+  // Lo ven quienes sirven ese día en la sede
+  assert.equal(await as(U.cR1, async () => (await rows(`select 1 from public.zone_reservation_defaults where zone_id = $1`, [zA])).length), 2);
+  assert.equal(await as(U.vol1, async () => (await rows(`select 1 from public.zone_reservation_defaults where zone_id = $1`, [zA])).length), 0);
+
+  // Ajuste de un servicio por reunión
+  const saveRes = (uid, ev, arr) => rpc(uid, `select public.save_reservations($1, $2::jsonb)`, [ev, JSON.stringify(arr)]);
+  const mineRes = async () => (await rows(`select to_char(m.start_time, 'HH24:MI') t, r.seats from public.service_reservations r left join public.slot_meetings m on m.id = r.meeting_id where r.event_id = $1 and r.zone_id = $2 order by m.start_time nulls first`, [U.evToday, zA])).map((r) => [r.t, r.seats]);
+  await saveRes(U.cR1, U.evToday, [{ zone_id: zA, seats: 12 }, { zone_id: zA, meeting_id: m1.id, seats: 20 }, { zone_id: zA, meeting_id: m2.id, seats: 8 }]);
+  assert.deepEqual(await mineRes(), [[null, 12], [m1.t, 20], [m2.t, 8]]);
+  await saveRes(U.cR1, U.evToday, [{ zone_id: zA, meeting_id: m2.id, seats: 9 }]);
+  assert.deepEqual(await mineRes(), [[null, 12], [m1.t, 20], [m2.t, 9]]);
+  await saveRes(U.cR1, U.evToday, [{ zone_id: zA, meeting_id: m1.id, seats: null }]);
+  assert.deepEqual(await mineRes(), [[null, 12], [m2.t, 9]], 'vacío vuelve al predeterminado de esa reunión');
+  await denied(() => saveRes(U.cR1, U.evToday, [{ zone_id: zA, meeting_id: mCas, seats: 1 }]), /no es de este servicio/);
+  await denied(() => saveRes(U.cR1, U.evToday, [{ zone_id: zA, meeting_id: 'no-uuid', seats: 1 }]), /no son válidas/);
+  await denied(() => saveRes(U.vR1, U.evToday, [{ zone_id: zA, meeting_id: m1.id, seats: 1 }]), /No puedes registrar/);
+  assert.deepEqual(await mineRes(), [[null, 12], [m2.t, 9]]);
+
+  // Reservas del rol por reunión: una hora concreta o todas
+  const day0 = (await one(`select public.today_co()::text d`)).d;
+  const zN = (await one(`select z.id from public.zones z where z.id = $1`, [zA])).id;
+  const mk = (uid, hour) => rpc(uid, `select public.create_seat_reservation($1, $2::date, 'A', 2, $3, $4::time)`, [zN, day0, `Hora ${hour ?? 'todas'}`, hour]);
+  await mk(U.liderCamp, '13:00'); await mk(U.liderCamp, null);
+  await denied(() => mk(U.liderCamp, '25:00'), /time|hora|invalid/i);
+  const seen = (uid) => as(uid, async () => (await rows(`select for_whom, to_char(meeting_time, 'HH24:MI') t, zone_id is not null z, location_id is not null l from public.seat_reservations_for(public.today_co(), public.today_co()) where for_whom like 'Hora %' order by meeting_time nulls first`)));
+  assert.deepEqual((await seen(U.cR1)).map((r) => [r.for_whom, r.t, r.z, r.l]), [['Hora todas', null, true, true], ['Hora 13:00', '13:00', true, true]]);
+  const id = (await one(`select id from public.seat_reservations where for_whom = 'Hora 13:00'`)).id;
+  await rpc(U.liderCamp, `select public.update_seat_reservation($1, $2, $3::date, 'A', 2, 'Hora 13:00', '15:00')`, [id, zN, day0]);
+  assert.equal((await one(`select to_char(meeting_time, 'HH24:MI') t from public.seat_reservations where id = $1`, [id])).t, '15:00');
+  // Reuniones disponibles para quien reserva
+  const rm = (uid) => as(uid, async () => (await rows(`select site_id, day, to_char(start_time, 'HH24:MI') t from public.reserver_meetings()`)).length);
+  assert.ok(await rm(U.liderCamp) >= 2);
+  assert.equal(await rm(U.vR1), 0);
+  assert.equal(await rm(U.liderNogal2), 0, 'otra sede no');
+});
+
+test('posición de conteo · una posición se liga a una entrada de su misma ubicación; solo quien edita el manual lo hace', async () => {
+  const entA = (await one(`insert into public.entrances (location_id, name) values ($1, 'Entrada de conteo') returning id`, [U.locA])).id;
+  const entB = (await one(`insert into public.entrances (location_id, name) values ($1, 'Entrada de otra ubicación') returning id`, [U.locB])).id;
+  const pos = (await one(`insert into public.positions (location_id, code, name, kind) values ($1, 'CNT1', 'Contador puerta', 'voluntario') returning id`, [U.locA])).id;
+  const link = (uid, e) => as(uid, async () => (await db.query(`update public.positions set entrance_id = $2 where id = $1`, [pos, e])).affectedRows);
+  assert.equal(await link(U.liderCamp, entA), 1);
+  assert.equal((await one(`select entrance_id from public.positions where id = $1`, [pos])).entrance_id, entA);
+  await denied(() => link(U.liderCamp, entB), /misma ubicación/);
+  assert.equal(await link(U.cR1, null), 0, 'el coordinador no edita el manual');
+  assert.equal(await link(U.vR1, null), 0);
+  assert.equal(await link(U.admin, null), 1);
+  await db.query(`update public.positions set entrance_id = $2 where id = $1`, [pos, entA]);
+  // Si se elimina la entrada, la posición queda sin ligar (no se borra)
+  await as(U.liderCamp, () => db.query(`delete from public.entrances where id = $1`, [entA]));
+  assert.equal((await one(`select entrance_id from public.positions where id = $1`, [pos])).entrance_id, null);
+  // Cambiar la posición de ubicación con una entrada ligada se rechaza
+  const entA2 = (await one(`insert into public.entrances (location_id, name) values ($1, 'Otra') returning id`, [U.locA])).id;
+  await db.query(`update public.positions set entrance_id = $2 where id = $1`, [pos, entA2]);
+  await denied(() => db.query(`update public.positions set location_id = $2 where id = $1`, [pos, U.locB]), /misma ubicación/);
+});
+
+test('contador digital · quién cuenta, tope por cupo y aforo, idempotencia y totales por reunión', async () => {
+  const meets = (await rows(`select id from public.slot_meetings where slot_id = $1 order by start_time`, [U.slotCamp])).map((r) => r.id);
+  const [m1, m2] = meets;
+  const entI = (await one(`insert into public.entrances (location_id, name) values ($1, 'Contador izq') returning id`, [U.locB])).id;
+  const entD = (await one(`insert into public.entrances (location_id, name) values ($1, 'Contador der') returning id`, [U.locB])).id;
+  const cap = Number((await one(`select capacity from public.locations where id = $1`, [U.locB])).capacity);   // 120
+  await db.query(`insert into public.entrance_quotas (entrance_id, meeting_id, quota) values ($1, $2, 50), ($3, $2, 80), ($1, $4, 30)`, [entI, m1, entD, m2]);
+  // Posición de conteo de la entrada izquierda, ocupada por un voluntario del grupo en la planeación publicada
+  const pos = (await one(`insert into public.positions (location_id, code, name, kind, entrance_id) values ($1, 'CNT9', 'Puerta izquierda', 'voluntario', $2) returning id`, [U.locB, entI])).id;
+  await db.query(`insert into public.service_plans (event_id, status) values ($1, 'publicado') on conflict (event_id) do update set status = 'publicado'`, [U.evToday]);
+  await db.query(`insert into public.service_assignments (event_id, position_id, user_id) values ($1, $2, $3)`, [U.evToday, pos, U.vR1]);
+  const op = () => crypto.randomUUID();
+  const tap = (uid, ev, ent, meet, delta, id = op()) => rpc(uid, `select public.apply_entrance_delta($1, $2, $3, $4, $5) as r`, [ev, ent, meet, delta, id]).then((r) => r[0].r);
+  const state = (uid, ev, ent) => rpc(uid, `select * from public.entrance_counter_state($1, $2) order by meeting_time`, [ev, ent]);
+
+  // Quién cuenta
+  assert.equal((await tap(U.vR1, U.evToday, entI, m1, 5)).count, 5, 'quien ocupa la posición cuenta su entrada');
+  await denied(() => tap(U.vR1, U.evToday, entD, m1, 1), /No puedes contar/, 'no la otra entrada');
+  await denied(() => tap(U.vR2, U.evToday, entI, m1, 1), /No puedes contar/, 'ni alguien de otro grupo');
+  await denied(() => tap(U.vol1, U.evToday, entI, m1, 1), /No puedes contar/);
+  await denied(() => state(U.vR2, U.evToday, entI), /No puedes contar/);
+  assert.equal((await tap(U.cR1, U.evToday, entD, m1, 7)).count, 7, 'el coordinador cuenta cualquier entrada de su sede');
+  assert.equal((await tap(U.liderCamp, U.evToday, entI, m1, 1)).count, 6, 'y el líder');
+  await denied(() => tap(U.liderNogal2, U.evToday, entI, m1, 1), /No puedes contar/);
+  // Cuándo: solo el día del servicio
+  const mkEv = async (n) => (await one(`insert into public.service_events (slot_id, service_date, group_id, kind, turn) values ($1, public.today_co() + $2::int, $3, 'rotacion', 0) returning id`, [U.slotCamp, n, U.gR1])).id;
+  const evTomorrow = await mkEv(70), evYesterday = await mkEv(-70);
+  await denied(() => tap(U.cR1, evTomorrow, entI, m1, 1), /No puedes contar/, 'antes del día no');
+  await denied(() => tap(U.cR1, evYesterday, entI, m1, 1), /No puedes contar/, 'ni después');
+  // Si el plan no está publicado, quien solo ocupa la posición ya no cuenta
+  await db.query(`update public.service_plans set status = 'borrador' where event_id = $1`, [U.evToday]);
+  await denied(() => tap(U.vR1, U.evToday, entI, m1, 1), /No puedes contar/);
+  await db.query(`update public.service_plans set status = 'publicado' where event_id = $1`, [U.evToday]);
+
+  // Validaciones
+  await denied(() => tap(U.vR1, U.evToday, entI, m1, 0), /cantidad no es válida/);
+  await denied(() => tap(U.vR1, U.evToday, entI, m1, 5001), /cantidad no es válida/);
+  await denied(() => tap(U.vR1, U.evToday, entI, 'a0000000-0000-4000-8000-000000000000', 1), /no es de este servicio/, 'reunión que no es del servicio');
+  await denied(() => rpc(U.vR1, `select public.apply_entrance_delta($1, $2, $3, 1, null)`, [U.evToday, entI, m1]), /Falta el identificador/);
+
+  // Idempotencia: reenviar la misma operación no cuenta dos veces
+  const same = op();
+  assert.equal((await tap(U.vR1, U.evToday, entI, m1, 4, same)).count, 10);
+  const again = await tap(U.vR1, U.evToday, entI, m1, 4, same);
+  assert.deepEqual([again.count, again.duplicate], [10, true]);
+  await denied(() => tap(U.vR1, U.evToday, entI, m2, 1, same), /ya se usó/, 'el identificador no sirve para otra cosa');
+  // Restar y no bajar de cero
+  assert.equal((await tap(U.vR1, U.evToday, entI, m1, -3)).count, 7);
+  const low = await tap(U.vR1, U.evToday, entI, m1, -100);
+  assert.deepEqual([low.count, low.applied, low.capped], [0, -7, 'cero']);
+  // Tope por cupo (50 la izquierda en la reunión 1)
+  await tap(U.vR1, U.evToday, entI, m1, 45);
+  const top = await tap(U.vR1, U.evToday, entI, m1, 20);
+  assert.deepEqual([top.count, top.applied, top.capped, top.max], [50, 5, 'cupo', 50]);
+  assert.equal((await tap(U.vR1, U.evToday, entI, m1, 1)).applied, 0, 'en el tope no sube más');
+  // Tope por aforo: 120 − 50 (izquierda) = 70 para la derecha aunque su cupo sea 80 (con 7 ya contados)
+  const aforo = await tap(U.cR1, U.evToday, entD, m1, 200);
+  assert.deepEqual([aforo.count, aforo.capped, aforo.locationTotal], [70, 'aforo', cap]);
+  // Cada reunión tiene su propio conteo
+  assert.equal((await tap(U.vR1, U.evToday, entI, m2, 12)).count, 12);
+  const s = await state(U.vR1, U.evToday, entI);
+  assert.equal(s.length, meets.length, 'una fila por reunión del servicio');
+  assert.deepEqual(s.slice(0, 2).map((r) => [r.quota, r.count, r.location_total]), [[50, 50, 120], [30, 12, 12]], 'estado por reunión con cupo, conteo y total del lugar');
+  assert.deepEqual(s.slice(2).map((r) => [r.quota, r.count]), s.slice(2).map(() => [null, 0]), 'las reuniones sin cupo ni conteo salen en cero');
+  assert.equal(s[0].entrance_name, 'Contador izq');
+  // Los totales del servicio, por reunión
+  const totals = (await rows(`select meeting_id, total from public.service_counts where event_id = $1 and location_id = $2 order by total`, [U.evToday, U.locB])).map((r) => [r.meeting_id === m1 ? 'm1' : r.meeting_id === m2 ? 'm2' : '-', r.total]);
+  assert.deepEqual(totals, [['m2', 12], ['m1', 120]]);
+  // El registro manual (todo el servicio) convive con los de reunión
+  await rpc(U.cR1, `select public.save_counts($1, $2::jsonb)`, [U.evToday, JSON.stringify([{ location_id: U.locB, total: 99 }])]);
+  assert.equal(await count('service_counts', `event_id = '${U.evToday}' and location_id = '${U.locB}'`), 3);
+  await rpc(U.cR1, `select public.save_counts($1, $2::jsonb)`, [U.evToday, JSON.stringify([{ location_id: U.locB, total: null }])]);
+  assert.equal(await count('service_counts', `event_id = '${U.evToday}' and location_id = '${U.locB}'`), 2, 'borrar el manual no toca los de reunión');
+  // Quién ve el detalle: quien planifica; el registro, quien administra la sede
+  assert.equal(await as(U.cR1, () => count('entrance_counters')), 3);
+  assert.equal(await as(U.vR1, () => count('entrance_counters')), 0);
+  assert.ok(await as(U.liderCamp, () => count('entrance_count_ops')) >= 8);
+  assert.equal(await as(U.cR1, () => count('entrance_count_ops')), 0);
+  await denied(() => as(U.admin, () => db.query(`insert into public.entrance_counters (event_id, entrance_id, meeting_id) values ($1, $2, $3)`, [U.evToday, entI, m1])), /permission denied/);
+  // Qué entradas puede contar hoy cada quien
+  const mine = (uid) => rpc(uid, `select entrance_id, assigned from public.my_counter_entrances() where event_id = $1 order by entrance_name`, [U.evToday]);
+  assert.deepEqual((await mine(U.vR1)).map((r) => [r.entrance_id === entI, r.assigned]), [[true, true]], 'quien ocupa la posición: solo esa entrada');
+  const cr = await mine(U.cR1);
+  assert.ok(cr.length >= 2 && cr.some((r) => r.entrance_id === entD) && cr.find((r) => r.entrance_id === entI).assigned === false, 'quien planifica: todas las de su sede');
+  assert.deepEqual(await mine(U.vR2), []);
 });

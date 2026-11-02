@@ -167,3 +167,42 @@ export async function deleteScheduleFile(sb: SupabaseClient, f: { id: string; pa
   must(await sb.from("schedule_files").delete().eq("id", f.id));
   await sb.storage.from("schedules").remove([f.path]);
 }
+
+// ───────────── Reuniones ─────────────
+const checkMeeting = (time: string, label: string) => {
+  if (!/^\d{2}:\d{2}$/.test(time)) throw new Error("Elige la hora de la reunión.");
+  if (label.trim().length > 40) throw new Error("El nombre de la reunión es demasiado largo (máximo 40 caracteres).");
+};
+const failWith = (error: { code?: string; message: string } | null) => { if (error) throw explain(error); };
+
+/** Agrega una reunión a la lista estándar de un horario. */
+export async function addSlotMeeting(sb: SupabaseClient, slotId: string, time: string, label: string) {
+  checkMeeting(time, label);
+  failWith((await sb.from("slot_meetings").insert({ slot_id: slotId, start_time: time, label: label.trim() || null })).error);
+}
+export async function updateSlotMeeting(sb: SupabaseClient, id: string, time: string, label: string) {
+  checkMeeting(time, label);
+  failWith((await sb.from("slot_meetings").update({ start_time: time, label: label.trim() || null }).eq("id", id)).error);
+}
+export async function removeSlotMeeting(sb: SupabaseClient, id: string) {
+  failWith((await sb.from("slot_meetings").delete().eq("id", id)).error);
+}
+
+/** Personaliza las reuniones de un servicio (copia las estándar para cambiarlas solo en ese servicio). */
+export async function customizeEventMeetings(sb: SupabaseClient, eventId: string) {
+  failWith((await sb.rpc("customize_event_meetings", { p_event: eventId })).error);
+}
+export async function resetEventMeetings(sb: SupabaseClient, eventId: string) {
+  failWith((await sb.rpc("reset_event_meetings", { p_event: eventId })).error);
+}
+export async function addEventMeeting(sb: SupabaseClient, eventId: string, time: string, label: string) {
+  checkMeeting(time, label);
+  failWith((await sb.from("event_meetings").insert({ event_id: eventId, start_time: time, label: label.trim() || null })).error);
+}
+export async function updateEventMeeting(sb: SupabaseClient, id: string, time: string, label: string) {
+  checkMeeting(time, label);
+  failWith((await sb.from("event_meetings").update({ start_time: time, label: label.trim() || null }).eq("id", id)).error);
+}
+export async function removeEventMeeting(sb: SupabaseClient, id: string) {
+  failWith((await sb.from("event_meetings").delete().eq("id", id)).error);
+}

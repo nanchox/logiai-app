@@ -6,7 +6,7 @@ import type { SupportEvent } from "@/lib/support/types";
 
 const ev = (id: string, date: string, o: Partial<ServiceEvent> = {}): ServiceEvent => ({
   id, slotId: "s1", siteId: "A", siteName: "Sede A", siteSlug: "a", day: "sabado", shift: "pm", date, groupId: "g1", groupName: "G1", kind: "rotacion", manual: false,
-  status: "programado", cancelReason: null, note: null, ...o,
+  status: "programado", cancelReason: null, note: null, meetingsCustom: false, ...o,
 });
 const TODAY = "2030-01-12";
 

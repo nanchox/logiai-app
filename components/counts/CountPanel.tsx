@@ -7,7 +7,11 @@ import { btnPrimary, ErrorText, input } from "@/components/manual/ui";
 import { formatDateTime } from "@/lib/announcements/dates";
 import { DAY_LABEL } from "@/lib/labels";
 import { addDays, formatServiceDate } from "@/lib/service/dates";
-import type { CountGuide, CountLocation, CountLogEntry, CountRow, ReservationDefault, ReservationOverride, ReservationZone } from "@/lib/counts/types";
+import type { Meeting } from "@/lib/service/meetings";
+import type { CountGuide, CountLocation, CountLogEntry, CountRow, Entrance, EntranceCounterRow, EntranceQuota, EventQuota, ReservationDefault, ReservationOverride, ReservationZone } from "@/lib/counts/types";
+import { BalanceSummary } from "./BalanceSummary";
+import { DigitalCounts } from "./DigitalCounts";
+import { EventQuotas } from "./EventQuotas";
 import { ReservationsForm } from "./ReservationsForm";
 import { type CountWindow } from "@/lib/counts/window";
 import { saveServiceCounts } from "@/lib/counts/mutations";
@@ -19,15 +23,20 @@ const pct = (n: number, cap: number) => (cap > 0 ? Math.round((n / cap) * 1000) 
 export function CountPanel({
   eventId, date, day, locations, counts, guide, canCount, window: win, manager, canSeeCounts, log,
   zones = [], reservationDefaults = [], reservations = [], showGuide = true,
+  entrances = [], meetings = [], standardQuotas = [], eventQuotas = [], roleReservations = [], entranceCounters = [],
 }: {
   eventId: string; date: string; day: string; locations: CountLocation[]; counts: CountRow[]; guide: CountGuide | null;
   canCount: boolean; window: CountWindow; manager: boolean; canSeeCounts: boolean; log: CountLogEntry[];
   zones?: ReservationZone[]; reservationDefaults?: ReservationDefault[]; reservations?: ReservationOverride[]; showGuide?: boolean;
+  entrances?: Entrance[]; meetings?: Meeting[]; standardQuotas?: EntranceQuota[]; eventQuotas?: EventQuota[];
+  roleReservations?: { zoneId: string; meetingTime: string | null; seats: number }[];
+  entranceCounters?: EntranceCounterRow[];
 }) {
   const sb = useMemo(() => createClient(), []);
   const router = useRouter();
   const withCapacity = locations.filter((l) => l.capacity !== null);
-  const initial = useMemo(() => Object.fromEntries(counts.map((c) => [c.locationId, String(c.total)])), [counts]);
+  // El registro manual es el total de todo el servicio; los de cada reunión los lleva el contador digital.
+  const initial = useMemo(() => Object.fromEntries(counts.filter((c) => !c.meetingId).map((c) => [c.locationId, String(c.total)])), [counts]);
   const [vals, setVals] = useState<Record<string, string>>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,7 +119,19 @@ export function CountPanel({
       )}
 
       {canSeeCounts && zones.length > 0 && (
-        <ReservationsForm eventId={eventId} day={day} zones={zones} defaults={reservationDefaults} overrides={reservations} canEdit={canCount} manager={manager} />
+        <ReservationsForm eventId={eventId} day={day} zones={zones} defaults={reservationDefaults} overrides={reservations} canEdit={canCount} manager={manager} meetings={meetings} />
+      )}
+
+      {canSeeCounts && entrances.length > 0 && (
+        <EventQuotas eventId={eventId} locations={locations} entrances={entrances} meetings={meetings} standard={standardQuotas} overrides={eventQuotas} canEdit={canCount} />
+      )}
+
+      {canSeeCounts && entrances.length > 0 && (
+        <BalanceSummary locations={locations} entrances={entrances} zones={zones} meetings={meetings} day={day} standardQuotas={standardQuotas} eventQuotas={eventQuotas} defaults={reservationDefaults} overrides={reservations} roleReservations={roleReservations} />
+      )}
+
+      {canSeeCounts && entranceCounters.length > 0 && (
+        <DigitalCounts locations={locations} entrances={entrances} meetings={meetings} counters={entranceCounters} standard={standardQuotas} overrides={eventQuotas} />
       )}
 
       {manager && log.length > 0 && (

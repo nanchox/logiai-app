@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EventManage } from "@/components/service/EventManage";
 import { FilesPanel } from "@/components/service/FilesPanel";
+import { formatMeetingTime } from "@/lib/service/meetings";
+import { loadEventMeetings } from "@/lib/service/load";
 import { ReservationList } from "@/components/reservations/ReservationList";
 import { loadSeatReservations } from "@/lib/reservations/load";
 import { CountPanel } from "@/components/counts/CountPanel";
@@ -13,7 +15,7 @@ import { Tabs, pickTab, type TabItem } from "@/components/service/Tabs";
 import { requireUser } from "@/lib/auth";
 import { serviceLabel } from "@/lib/labels";
 import { formatServiceDate } from "@/lib/service/dates";
-import { loadCountLocations, loadCountLog, loadCounts, loadGuides, loadReservationDefaults, loadReservationOverrides, loadReservationZones } from "@/lib/counts/load";
+import { loadCountLocations, loadCountLog, loadCounts, loadEntranceCounters, loadEntranceQuotas, loadEntrances, loadEventQuotas, loadGuides, loadReservationDefaults, loadReservationOverrides, loadReservationZones } from "@/lib/counts/load";
 import { canCountNow, countWindow } from "@/lib/counts/window";
 import { addDays, todayCo } from "@/lib/service/dates";
 import { loadEvent, loadEvents, loadPlan, loadPlanPositions, loadRotationGroups } from "@/lib/service/load";
@@ -45,7 +47,7 @@ export default async function ServicePage({ params, searchParams }: PageProps<"/
   const [request] = await Promise.all([isNext ? loadEventRequest(supabase, event.id) : Promise.resolve(null)]);
   const applications = request ? await loadApplications(supabase, request.id) : [];
   // Conteos: la guía la ven quienes sirven ese día; los totales, quienes planifican el servicio.
-  const [guides, countLocations, counts, countLog, zones, rsvDefaults, rsvOverrides] = event.status === "programado" && event.groupId
+  const [guides, countLocations, counts, countLog, zones, rsvDefaults, rsvOverrides, entrances, stdQuotas, evQuotas, counters] = event.status === "programado" && event.groupId
     ? await Promise.all([
         loadGuides(supabase, event.siteId),
         loadCountLocations(supabase, event.siteId),
@@ -54,12 +56,17 @@ export default async function ServicePage({ params, searchParams }: PageProps<"/
         canPlan ? loadReservationZones(supabase, event.siteId) : Promise.resolve([]),
         canPlan ? loadReservationDefaults(supabase) : Promise.resolve([]),
         canPlan ? loadReservationOverrides(supabase, event.id) : Promise.resolve([]),
+        canPlan ? loadEntrances(supabase) : Promise.resolve([]),
+        canPlan ? loadEntranceQuotas(supabase) : Promise.resolve([]),
+        canPlan ? loadEventQuotas(supabase, event.id) : Promise.resolve([]),
+        canPlan ? loadEntranceCounters(supabase, event.id) : Promise.resolve([]),
       ])
-    : [[], [], [], [], [], [], []];
+    : [[], [], [], [], [], [], [], [], [], [], []];
   const guide = guides.find((g) => g.day === event.day) ?? null;
   // Reservas de puestos de ese día en la sede, para quien planifica (las ve cualquiera que coordine, supervise o administre la sede).
   const seatReservations = canPlan && event.status === "programado" ? (await loadSeatReservations(supabase, event.date, event.date)).filter((r) => r.siteId === event.siteId) : [];
   const today = todayCo();
+  const meetings = await loadEventMeetings(supabase, event);
   // Quien apoya no ve el nombre de un grupo ajeno con sus permisos normales.
   if (event.groupId && !event.groupName) event.groupName = ((await supabase.rpc("event_group_name", { p_event: event.id })).data as string | null) ?? null;
 
@@ -83,6 +90,13 @@ export default async function ServicePage({ params, searchParams }: PageProps<"/
           <span>{serviceLabel(event.day, event.shift)} · {event.siteName} · <strong className="text-fg">{event.groupName ?? "Sin grupo"}</strong></span>
           <StatusBadges e={event} />
         </p>
+        {meetings.length > 0 && event.status === "programado" && (
+          <div role="group" className="mt-2 flex flex-wrap items-center gap-2 text-sm" aria-label="Reuniones del servicio">
+            <span className="font-semibold">Reuniones:</span>
+            {meetings.map((m) => <span key={m.id} className="rounded-full border border-line bg-surface px-2.5 py-0.5 font-semibold">{formatMeetingTime(m.time)}{m.label ? ` · ${m.label}` : ""}</span>)}
+            {event.meetingsCustom && <span className="text-xs font-bold text-muted">(personalizadas)</span>}
+          </div>
+        )}
         {event.note && <p className="mt-2 whitespace-pre-line rounded-lg border border-line bg-surface p-3 text-sm">{event.note}</p>}
       </div>
 
@@ -108,13 +122,14 @@ export default async function ServicePage({ params, searchParams }: PageProps<"/
           groups={groups.filter((g) => g.slotId === event.slotId)}
           hasPlan={plan.status !== null || plan.assignments.length > 0 || plan.files.length > 0}
           canAllSites={user.isAdmin || user.isHead}
+          meetings={meetings}
         />
       )}
 
       {tab === "apoyos" && canPlan && isNext && <SupportPanel event={event} people={people} request={request} applications={applications} positions={positions} />}
 
       {tab === "conteos" && live && (
-        <CountPanel eventId={event.id} date={event.date} day={event.day} locations={countLocations} counts={counts} guide={guide} canSeeCounts={canPlan} canCount={canPlan && canCountNow(event.date, today, canManage)} window={countWindow(event.date, today)} manager={canManage} log={countLog} zones={zones} reservationDefaults={rsvDefaults} reservations={rsvOverrides} />
+        <CountPanel eventId={event.id} date={event.date} day={event.day} locations={countLocations} counts={counts} guide={guide} canSeeCounts={canPlan} canCount={canPlan && canCountNow(event.date, today, canManage)} window={countWindow(event.date, today)} manager={canManage} log={countLog} zones={zones} reservationDefaults={rsvDefaults} reservations={rsvOverrides} entrances={entrances} meetings={meetings} standardQuotas={stdQuotas} eventQuotas={evQuotas} entranceCounters={counters} roleReservations={seatReservations.map((r) => ({ zoneId: r.zoneId, meetingTime: r.meetingTime, seats: r.seats }))} />
       )}
 
       {tab === "posiciones" && live && (

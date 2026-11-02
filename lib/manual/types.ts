@@ -19,6 +19,8 @@ export type ViewerPosition = {
   kind: PositionKind;
   description: string;
   usesRadio: boolean;
+  /** Entrada que cuenta quien ocupa esta posición (posición de conteo). */
+  entranceId: string | null;
   zoneId: string | null;
   zoneName: string | null;
   days: string[];

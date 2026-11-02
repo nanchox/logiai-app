@@ -4,6 +4,9 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DAY_LABEL, SHIFT_LABEL } from "@/lib/labels";
 import { createClient } from "@/lib/supabase/client";
+import { MeetingsEditor } from "@/components/service/MeetingsEditor";
+import type { Meeting } from "@/lib/service/meetings";
+import { addSlotMeeting, removeSlotMeeting, updateSlotMeeting } from "@/lib/service/mutations";
 import { createGroup, createSlot, deleteGroup, deleteSlot, renameGroup, updateSlot } from "@/lib/people/mutations";
 import type { GroupItem, SiteItem, SlotItem } from "@/lib/people/types";
 import { btn, btnDanger, btnPrimary, ErrorText, input, label } from "@/components/manual/ui";
@@ -23,7 +26,7 @@ function useAction() {
   return { busy, error, run };
 }
 
-export function GroupsAdmin({ sites, slots, groups }: { sites: SiteItem[]; slots: SlotItem[]; groups: GroupItem[] }) {
+export function GroupsAdmin({ sites, slots, groups, meetings }: { sites: SiteItem[]; slots: SlotItem[]; groups: GroupItem[]; meetings: Record<string, Meeting[]> }) {
   if (!sites.length) return <p className="text-muted">No hay sedes disponibles.</p>;
   return (
     <div className="space-y-8">
@@ -31,7 +34,7 @@ export function GroupsAdmin({ sites, slots, groups }: { sites: SiteItem[]; slots
         <section key={site.id} aria-label={site.name} className="space-y-4">
           <h2 className="text-xl font-extrabold">{site.name}</h2>
           {slots.filter((s) => s.siteId === site.id).map((slot) => (
-            <SlotCard key={slot.id} slot={slot} groups={groups.filter((g) => g.slotId === slot.id)} />
+            <SlotCard key={slot.id} slot={slot} groups={groups.filter((g) => g.slotId === slot.id)} meetings={meetings[slot.id] ?? []} />
           ))}
           {!slots.some((s) => s.siteId === site.id) && <p className="text-sm text-muted">Esta sede todavía no tiene horarios de servicio.</p>}
           <NewSlot siteId={site.id} siteName={site.name} existing={slots.filter((s) => s.siteId === site.id)} />
@@ -41,7 +44,7 @@ export function GroupsAdmin({ sites, slots, groups }: { sites: SiteItem[]; slots
   );
 }
 
-function SlotCard({ slot, groups }: { slot: SlotItem; groups: GroupItem[] }) {
+function SlotCard({ slot, groups, meetings }: { slot: SlotItem; groups: GroupItem[]; meetings: Meeting[] }) {
   const sb = useMemo(() => createClient(), []);
   const { busy, error, run } = useAction();
   const [times, setTimes] = useState({ arrival: hhmm(slot.arrival), start: hhmm(slot.start), end: hhmm(slot.end) });
@@ -67,7 +70,14 @@ function SlotCard({ slot, groups }: { slot: SlotItem; groups: GroupItem[] }) {
         <button className={btn} disabled={busy}>Guardar horas</button>
       </form>
 
-      <ul className="space-y-2">
+      <div className="space-y-2 border-t border-line pt-4">
+        <h4 className="font-bold">Reuniones</h4>
+        <p className="text-sm text-muted">Las reuniones del día (por ejemplo 1, 3, 5 y 7 pm). El mismo grupo sirve todas; cada una tiene sus propios cupos de entrada, reservas y conteos. Cada servicio las puede personalizar.</p>
+        <MeetingsEditor title={`Reuniones de ${title}`} meetings={meetings} busy={busy}
+          onAdd={(t, l) => run(() => addSlotMeeting(sb, slot.id, t, l))} onUpdate={(id, t, l) => run(() => updateSlotMeeting(sb, id, t, l))} onRemove={(id) => run(() => removeSlotMeeting(sb, id))} />
+      </div>
+
+      <ul className="space-y-2 border-t border-line pt-4">
         {groups.map((g) => <GroupRow key={g.id} group={g} />)}
         {groups.length === 0 && <li className="text-sm text-muted">Sin grupos todavía.</li>}
       </ul>

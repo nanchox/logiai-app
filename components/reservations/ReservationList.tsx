@@ -1,4 +1,5 @@
 import { formatServiceDateShort } from "@/lib/service/dates";
+import { formatMeetingTime } from "@/lib/service/meetings";
 import type { SeatReservation } from "@/lib/reservations/types";
 
 /** Reservas de puestos para tener en cuenta durante el servicio: zona, fila, cuántos puestos y para quién. */
@@ -12,6 +13,7 @@ export function ReservationList({ items, showDate = false, showSite = false, ari
           {showSite && <span className="text-xs font-bold uppercase tracking-wider text-muted">{r.siteName}</span>}
           <span className="font-semibold">{r.zoneName}</span>
           <span className="text-muted">{r.locationName} · fila {r.row}</span>
+          <span className="rounded-full border border-line px-2 py-0.5 text-xs font-semibold">{r.meetingTime ? `Reunión ${formatMeetingTime(r.meetingTime)}` : "Todas las reuniones"}</span>
           <span className="rounded-full bg-badge px-2 py-0.5 text-xs font-bold text-on-badge">{r.seats} {r.seats === 1 ? "puesto" : "puestos"}</span>
           <span className="min-w-0 flex-1 basis-40">Para: <strong>{r.forWhom}</strong></span>
         </li>

@@ -18,6 +18,8 @@ type Props = {
   siteSlug: string;
   locationId: string;
   zones: ViewerZone[];
+  /** Entradas de esta ubicación (para marcar una posición de conteo). */
+  entrances?: { id: string; name: string }[];
   nextCode: string;
   onClose: () => void;
   /** Se llama tras cualquier cambio para recargar los datos. `createdId` solo al crear. */
@@ -33,7 +35,7 @@ export function PositionEditor(props: Props) {
   );
 }
 
-function Form({ position, siteSlug, locationId, zones, nextCode, onClose, onChanged }: Props) {
+function Form({ position, siteSlug, locationId, zones, entrances = [], nextCode, onClose, onChanged }: Props) {
   const sb = createClient();
   const [f, setF] = useState({
     code: position?.code ?? nextCode,
@@ -42,6 +44,7 @@ function Form({ position, siteSlug, locationId, zones, nextCode, onClose, onChan
     zoneId: position?.zoneId ?? "",
     description: position?.description ?? "",
     usesRadio: position?.usesRadio ?? false,
+    entranceId: position?.entranceId ?? "",
     days: position?.days ?? [],
     shifts: position?.shifts ?? [],
     isActive: position?.isActive ?? true,
@@ -60,7 +63,7 @@ function Form({ position, siteSlug, locationId, zones, nextCode, onClose, onChan
   const save = (e: React.FormEvent) => {
     e.preventDefault();
     return run(async () => {
-      const id = await savePosition(sb, locationId, { ...f, zoneId: f.zoneId || null }, position?.id);
+      const id = await savePosition(sb, locationId, { ...f, zoneId: f.zoneId || null, entranceId: f.entranceId || null }, position?.id);
       onChanged(position ? undefined : id);
       if (position) onClose();
     });
@@ -114,6 +117,16 @@ function Form({ position, siteSlug, locationId, zones, nextCode, onClose, onChan
               ))}
             </div>
           </fieldset>
+          {entrances.length > 0 && (
+            <div>
+              <label className={label} htmlFor="pe-entrance">Posición de conteo (opcional)</label>
+              <select id="pe-entrance" className={input} value={f.entranceId} onChange={(e) => setF({ ...f, entranceId: e.target.value })}>
+                <option value="">No cuenta personas</option>
+                {entrances.map((en) => <option key={en.id} value={en.id}>Cuenta la {en.name.charAt(0).toLowerCase() + en.name.slice(1)}</option>)}
+              </select>
+              <p className="mt-1 text-xs text-muted">Quien ocupe esta posición en el servicio cuenta con el contador digital en esa entrada.</p>
+            </div>
+          )}
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
             <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.usesRadio} onChange={(e) => setF({ ...f, usesRadio: e.target.checked })} />📻 Usa radio</label>
             <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.isActive} onChange={(e) => setF({ ...f, isActive: e.target.checked })} />Visible para el equipo</label>

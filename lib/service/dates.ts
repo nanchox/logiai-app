@@ -25,3 +25,7 @@ export function mondayOf(d: string): string {
   const dow = at(d).getUTCDay();   // 0 = domingo
   return addDays(d, dow === 0 ? -6 : 1 - dow);
 }
+
+const WEEKDAY_KEYS = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"];
+/** Día de la semana de una fecha «AAAA-MM-DD» con la misma clave de los horarios (miercoles, sabado, domingo…). */
+export const weekdayKey = (d: string): string => WEEKDAY_KEYS[at(d).getUTCDay()];

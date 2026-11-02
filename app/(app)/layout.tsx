@@ -4,6 +4,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { ChatDock, ChatShell, ChatToggle } from "@/components/chat/ChatDock";
 import { ChatProvider } from "@/components/chat/ChatProvider";
 import { requireUser } from "@/lib/auth";
+import { loadMyCounterEntrances } from "@/lib/counter/load";
 import { loadOpenRequests } from "@/lib/support/load";
 import { createClient } from "@/lib/supabase/server";
 
@@ -36,7 +37,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     );
   }
   // Solicitudes de apoyo que la persona puede atender y aún no ha respondido (contador del menú).
-  const pending = (await loadOpenRequests(await createClient())).filter((r) => r.myStatus === null).length;
+  const supa = await createClient();
+  const pending = (await loadOpenRequests(supa)).filter((r) => r.myStatus === null).length;
+  const canCountToday = (await loadMyCounterEntrances(supa)).length > 0;
 
   return (
     <ChatProvider configured={!!process.env.OPENROUTER_API_KEY} limit={Number(process.env.CHAT_DAILY_LIMIT) || 30}>
@@ -50,6 +53,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link href="/manual" className={navLink}>Manual</Link>
             <Link href="/servicio" className={navLink}>Mi servicio{pending > 0 && <span aria-label={`${pending} solicitudes de apoyo`} className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-xs font-extrabold text-on-accent">{pending}</span>}</Link>
             {(user.isAdmin || user.isHead || user.leaderSites.length > 0 || (!!user.membership && ["coordinador", "supervisor"].includes(user.membership.role))) && <Link href="/conteos" className={navLink}>Conteos</Link>}
+            {canCountToday && <Link href="/contador" className={navLink}>Contador</Link>}
             <ChatToggle className={navLink} />
             {user.membership && <Link href="/grupo" className={navLink}>Mi grupo</Link>}
             {user.canManagePeople && <Link href="/personas" className={navLink}>Personas</Link>}

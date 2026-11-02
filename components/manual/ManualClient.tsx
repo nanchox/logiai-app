@@ -26,6 +26,7 @@ type Props = {
   canManage: boolean;
   maps: ViewerMap[];
   zones: ViewerZone[];
+  entrances?: { id: string; name: string }[];
   positions: ViewerPosition[];
   markers: ViewerMarker[];
   defaultDay: string;
@@ -34,7 +35,7 @@ type Props = {
 
 const keyOf = (positionId: string, mapId: string, variant: Variant) => `${positionId}|${mapId}|${variant}`;
 
-export function ManualClient({ siteSlug, locationId, canManage, maps, zones, positions, markers, defaultDay, defaultShift }: Props) {
+export function ManualClient({ siteSlug, locationId, canManage, maps, zones, entrances = [], positions, markers, defaultDay, defaultShift }: Props) {
   const router = useRouter();
   const sb = useMemo(() => createClient(), []);
   const isMobile = useIsMobile();
@@ -269,7 +270,7 @@ export function ManualClient({ siteSlug, locationId, canManage, maps, zones, pos
 
       <PositionSheet position={editing ? null : selected} onClose={() => setSelectedId(null)} />
       <PositionEditor
-        open={!!editor} position={editorPosition} siteSlug={siteSlug} locationId={locationId} zones={zones} nextCode={nextCode}
+        open={!!editor} position={editorPosition} siteSlug={siteSlug} locationId={locationId} zones={zones} entrances={entrances} nextCode={nextCode}
         onClose={() => setEditor(null)}
         onChanged={(createdId) => { if (createdId) setEditor({ positionId: createdId }); refresh(); }}
       />
