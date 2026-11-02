@@ -32,12 +32,18 @@ export async function collectMyData(sb: SupabaseClient, userId: string, email: s
     sb.from("consents").select("policy_version, accepted_at").eq("user_id", userId).order("accepted_at"),
     loadHistory(sb, userId, 1000),
   ]);
-  const leads = await sb.from("site_leaders").select("sites(name)").eq("user_id", userId);
+  const [leads, reservers, reservations] = await Promise.all([
+    sb.from("site_leaders").select("sites(name)").eq("user_id", userId),
+    sb.rpc("my_reserver_sites"),
+    sb.from("seat_reservations").select("service_date, row_label, seats, for_whom, created_at, sites(name), zones(name)").eq("created_by", userId).order("service_date"),
+  ]);
   return {
     generadoEn: new Date().toISOString(),
     descripcion: "Datos personales que LogiAI guarda sobre ti. No incluye el contenido de las conversaciones con el asistente porque no se guarda.",
     cuenta: { correo: email, nombre: profile.data?.full_name ?? null, administrador: !!profile.data?.is_admin, cabezaDeMinisterio: !!profile.data?.is_head, creadaEn: profile.data?.created_at ?? null },
     sedesQueLidera: (leads.data ?? []).map((l) => (l as unknown as { sites: { name: string } }).sites.name),
+    sedesDondeReserva: ((reservers.data ?? []) as { name: string }[]).map((l) => l.name),
+    reservasRegistradas: reservations.data ?? [],
     grupos: memberships.data ?? [],
     aceptaciones: consents.data ?? [],
     historialDePosiciones: history,

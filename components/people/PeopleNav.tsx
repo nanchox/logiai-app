@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-type Tab = "integrantes" | "grupos" | "rotacion" | "lideres";
+type Tab = "integrantes" | "grupos" | "rotacion" | "reservas" | "lideres";
 
 /** Pestañas de la sección Personas; cada una solo se ofrece a quien puede usarla. */
 export function PeopleNav({ current, canManageGroups, canManageLeaders }: { current: Tab; canManageGroups: boolean; canManageLeaders: boolean }) {
@@ -8,6 +8,7 @@ export function PeopleNav({ current, canManageGroups, canManageLeaders }: { curr
     { id: "integrantes", href: "/personas", label: "Integrantes", show: true },
     { id: "grupos", href: "/personas/grupos", label: "Grupos y horarios", show: canManageGroups },
     { id: "rotacion", href: "/personas/rotacion", label: "Rotación", show: canManageGroups },
+    { id: "reservas", href: "/personas/reservas", label: "Reservas", show: canManageGroups },
     { id: "lideres", href: "/personas/lideres", label: "Líderes y administración", show: canManageLeaders },
   ];
   const visible = tabs.filter((t) => t.show);

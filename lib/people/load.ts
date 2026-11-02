@@ -113,3 +113,28 @@ export async function loadLeaders(supabase: SupabaseClient, sites: SiteItem[]): 
   }));
   return { leaders: [...byUser.values()].sort((a, b) => naturalCompare(a.name, b.name)), admins, pending };
 }
+
+export type ReserverItem = { userId: string; name: string; email: string | null; sites: SiteItem[] };
+
+/** Quienes tienen el rol «Reservas» en las sedes que la persona administra, y las invitaciones pendientes para ese rol. */
+export async function loadReservers(supabase: SupabaseClient, sites: SiteItem[]): Promise<{ reservers: ReserverItem[]; pending: PendingStaff[] }> {
+  const [res, pendingRes] = await Promise.all([
+    supabase.from("site_reservers").select("user_id, site_id, profiles(full_name, profile_private(email))"),
+    supabase.from("invitations").select("id, email, reserver_site_ids, created_at").is("accepted_at", null).neq("reserver_site_ids", "{}").order("created_at", { ascending: false }),
+  ]);
+  const siteById = new Map(sites.map((s) => [s.id, s]));
+  type Row = { user_id: string; site_id: string; profiles: { full_name: string | null; profile_private: { email: string } | null } | null };
+  const byUser = new Map<string, ReserverItem>();
+  for (const r of (res.data ?? []) as unknown as Row[]) {
+    const site = siteById.get(r.site_id);
+    if (!site) continue;
+    const item = byUser.get(r.user_id) ?? { userId: r.user_id, name: r.profiles?.full_name ?? "Sin nombre", email: r.profiles?.profile_private?.email ?? null, sites: [] };
+    item.sites.push(site);
+    byUser.set(r.user_id, item);
+  }
+  const pending = (pendingRes.data ?? []).map((i) => ({
+    id: i.id, email: i.email, createdAt: i.created_at,
+    label: `Reservas en ${(i.reserver_site_ids as string[]).map((id) => siteById.get(id)?.name ?? "sede").join(", ")}`,
+  }));
+  return { reservers: [...byUser.values()].sort((a, b) => naturalCompare(a.name, b.name)), pending };
+}

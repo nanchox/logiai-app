@@ -137,7 +137,7 @@ Las imágenes se comprimen en el navegador antes de subirlas. Los buckets son pr
 
 ## 8. Fases
 
-**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ✅ Fase 4 · ✅ Fase 5 · ✅ Fase 6 · ✅ Fase 7 · ✅ Fase 8 · ✅ Fase 9 · ✅ Ajustes de Mi servicio (activos, pestañas, atajos) · ✅ Reservas por zona y servicio de hoy · ⬜ Publicación ampliada
+**Estado:** ✅ Fase 1 · ✅ Fase 2 · ✅ Fase 3 · ✅ Fase 4 · ✅ Fase 5 · ✅ Fase 6 · ✅ Fase 7 · ✅ Fase 8 · ✅ Fase 9 · ✅ Ajustes de Mi servicio (activos, pestañas, atajos) · ✅ Reservas por zona y servicio de hoy · ✅ Rol «Reservas» · ⬜ Publicación ampliada
 
 1. **Base:** proyecto Next.js, esquema y RLS, login con Google y hook de lista blanca, roles, tema claro/oscuro, carga inicial (sedes, locations, admin, cabeza), importación del prototipo actual (mapa y zonas 1 a 6 de Castellana, Auditorio principal).
 2. **Manual (núcleo):** visor de mapas y pines, fichas de posición con fotos y YouTube, editor de pines, carga y reemplazo de mapas, posiciones por día y franja, flujos.
@@ -200,6 +200,33 @@ Los grupos cuentan a las personas que entran por cada entrada de la sede; al ter
 - Por **servicio**, por **día** (todos sus horarios) y por **semana completa de lunes a domingo**, con el total por ubicación, el total de la sede, la capacidad y el porcentaje de ocupación, y una comparación sencilla con la semana anterior.
 - **Quién lo ve:** el líder de su sede, la cabeza y el administrador (todas las sedes, con totales consolidados). Los coordinadores y supervisores ven **solo los conteos de sus servicios**.
 - Todas las reglas las hace cumplir la base de datos, no solo la pantalla.
+
+## 8.4 Entradas, cuadre de aforo y contador digital (plan acordado)
+
+**Decisiones acordadas**
+- El número de cada entrada es un **cupo asignado** (cuántas personas se espera que entren por ahí). Es el tope del contador digital.
+- El cuadre por ubicación es: **cupos de las entradas + reservas = aforo**. Cuentan **ambas** reservas: las «por zona» (predeterminado por día y ajuste del servicio) y las del rol «Reservas» de ese día. Como un mismo puesto podría estar en las dos, el resumen las muestra por separado.
+- Si no cuadra, **solo se avisa** («faltan N» / «sobran N»); nunca se bloquea el guardado.
+- Cada horario (por ejemplo el sábado) tiene **reuniones** (por ejemplo 1, 3, 5 y 7 pm). **El mismo grupo sirve todas las reuniones del día**: la rotación, la planeación y los permisos no cambian; las reuniones solo separan **cupos de entradas, reservas y conteos**.
+- Las reuniones son **fijas por día** (la lista estándar la define el líder) y **se pueden editar**: de forma permanente o solo para un servicio concreto (por ejemplo, el horario especial de fin de año: quitar, agregar o cambiar la hora de una reunión).
+- El cupo de cada entrada y las reservas especiales son **estándar por reunión** y se ajustan en cada servicio. Las reservas del rol «Reservas» se registran para **una reunión o para todas** las del día.
+- El contador digital **sugiere la reunión más cercana a la hora actual** y el servidor la puede cambiar; el conteo queda en esa reunión.
+- Cuenta **quien tiene la posición de conteo** de esa entrada en la planeación publicada (y el coordinador o supervisor del grupo). **Un solo contador por entrada**, compartido en vivo.
+- Sin señal, el contador **sigue contando y sincroniza** al volver; avisa que está sin conexión.
+- El conteo digital **se guarda solo** como total de la ubicación (suma de sus entradas).
+
+**Etapas** (cada una: migración aditiva, pruebas de permisos, e2e, regresión, README y push)
+1. **Reservas editables.** Vista para ver y **editar** las reservas de puestos: administrador y cabeza (todas las sedes) y líder (su sede). Los coordinadores y supervisores solo las ven.
+2. **Reuniones por horario.** Cada horario de una sede (sábado, domingo, miércoles) tiene su lista de reuniones con hora (1, 3, 5 y 7 pm) que define el líder. Cada servicio las hereda y se pueden editar solo para ese servicio. **No cambia la rotación ni la planeación**; los conteos existentes quedan como «todo el servicio» para no perder nada.
+3. **Entradas.** Cada ubicación tiene entradas (nombre y nota de quiénes ingresan) con un **cupo estándar por reunión**. Las crean y editan el administrador, la cabeza y el líder de su sede; el cupo se ajusta por servicio.
+4. **Cuadre.** Resumen por ubicación y **por reunión**: cupos + reservas de zona (predeterminadas por reunión, ajustables) + reservas del rol frente al aforo, con «cuadra / faltan N / sobran N», al configurar y en Conteos.
+5. **Posición de conteo.** Marcar una posición del manual como de conteo y ligarla a una entrada.
+6. **Contador digital.** Vista aparte en pantalla completa para celular, instalable: botón grande para sumar, botón para restar, máximo conocido (el cupo), aviso al acercarse y al llegar al tope, pantalla encendida, modo sin conexión con sincronización. Cada toque queda registrado; el total de la ubicación se actualiza solo y alimenta totales y reportes.
+
+**Riesgos a vigilar**
+- El contador lo usa un voluntario, que hoy no puede escribir conteos: se hace con funciones de la base de datos que validan la posición asignada y el servicio de hoy.
+- Los conteos y las reservas por zona hoy son por servicio: pasan a ser **por reunión** (con «todo el servicio» para lo ya registrado). Es un cambio de base de datos que se hace con cuidado y con regresión completa.
+- El total automático debe respetar la capacidad y dejar el historial de cambios.
 
 ## 9. Lo que se necesita crear (cuenta del ministerio o del admin)
 1. Proyecto en Supabase. Se toman las variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY`.

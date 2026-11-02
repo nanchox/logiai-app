@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { ReservationForm } from "@/components/reservations/ReservationForm";
+import { ReservationList } from "@/components/reservations/ReservationList";
+import { loadReserverZones, loadSeatReservations } from "@/lib/reservations/load";
 import { RecentAnnouncements } from "@/components/announcements/RecentAnnouncements";
 import { loadAnnouncements } from "@/lib/announcements/load";
 import { ActiveBadge } from "@/components/service/ActiveBadge";
@@ -18,6 +21,25 @@ export default async function HomePage() {
   const user = await requireUser();
 
   const supabase = await createClient();
+
+  // Rol «Reservas»: el cuadro para registrar reservas de puestos. Quien solo tiene ese rol no ve nada más.
+  const [reserverZones, myReservations] = user.reserverSites.length > 0
+    ? await Promise.all([loadReserverZones(supabase), loadSeatReservations(supabase, todayCo())])
+    : [[], []];
+  if (user.reserverOnly) {
+    return (
+      <main className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-extrabold">Hola, {user.name.split(" ")[0]}</h1>
+          <p className="mt-1 text-muted">
+            <span className="mr-2 inline-block rounded-full bg-badge px-2.5 py-0.5 text-xs font-bold text-on-badge">{user.roleLabel}</span>
+            {user.reserverSites.map((s) => s.name).join(", ")}
+          </p>
+        </div>
+        <ReservationForm zones={reserverZones} mine={myReservations.filter((r) => r.mine)} today={todayCo()} />
+      </main>
+    );
+  }
   const recent = (await loadAnnouncements(supabase, 30)).filter((a) => a.status === "active").slice(0, 3);
   const requests = (await loadOpenRequests(supabase)).slice(0, 3);
   const nextService = user.membership
@@ -39,6 +61,8 @@ export default async function HomePage() {
         loadReservationOverrides(supabase, todayItem.eventId),
       ])
     : null;
+  // Reservas de puestos de hoy para tener en cuenta durante el servicio (coordinadores, supervisores, líderes, cabeza y administrador).
+  const todayReservations = shortcuts ? await loadSeatReservations(supabase, todayCo(), todayCo()) : [];
   const manuals = user.isAdmin || user.isHead
     ? [{ href: "/manual", label: "Manual de logística", hint: "Todas las sedes" }]
     : user.leaderSites.length
@@ -63,6 +87,8 @@ export default async function HomePage() {
         </p>
       </div>
 
+      {user.reserverSites.length > 0 && <ReservationForm zones={reserverZones} mine={myReservations.filter((r) => r.mine)} today={todayCo()} />}
+
       {shortcuts && (
         <section aria-label="Atajos" className="space-y-3">
           {todayItem && todayData && user.membership && (
@@ -76,6 +102,13 @@ export default async function HomePage() {
                 zones: todayData[3], reservationDefaults: todayData[4], reservations: todayData[5],
               }}
             />
+          )}
+          {todayReservations.length > 0 && (
+            <section aria-label="Reservas de hoy" className="space-y-2 rounded-2xl border-2 border-accent bg-surface p-4">
+              <h2 className="text-lg font-extrabold">Reservas de puestos de hoy</h2>
+              <p className="text-sm text-muted">Puestos que están reservados: tenlos en cuenta al acomodar.</p>
+              <ReservationList items={todayReservations} showSite={new Set(todayReservations.map((r) => r.siteId)).size > 1} ariaLabel="Reservas de puestos de hoy" />
+            </section>
           )}
           <div className="space-y-3" aria-label="Servicio activo">
             <h2 className="text-lg font-extrabold">Tu servicio activo</h2>

@@ -9,6 +9,7 @@ const PUBLIC_PATHS = ["/login", "/auth", "/politica", "/terminos", "/manifest.we
 // Refresca la sesión de Supabase en cada petición y envía a /login a quien no la tenga.
 // Es solo una comprobación optimista: los permisos reales los aplica RLS en la base de datos.
 export async function proxy(request: NextRequest) {
+  request.headers.set("x-pathname", request.nextUrl.pathname); // para que el servidor sepa en qué pantalla está (quien solo reserva)
   let response = NextResponse.next({ request });
 
   const { url, key } = getSupabaseConfig();

@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EventManage } from "@/components/service/EventManage";
 import { FilesPanel } from "@/components/service/FilesPanel";
+import { ReservationList } from "@/components/reservations/ReservationList";
+import { loadSeatReservations } from "@/lib/reservations/load";
 import { CountPanel } from "@/components/counts/CountPanel";
 import { SupportPanel } from "@/components/support/SupportPanel";
 import { PlanEditor } from "@/components/service/PlanEditor";
@@ -55,6 +57,8 @@ export default async function ServicePage({ params, searchParams }: PageProps<"/
       ])
     : [[], [], [], [], [], [], []];
   const guide = guides.find((g) => g.day === event.day) ?? null;
+  // Reservas de puestos de ese día en la sede, para quien planifica (las ve cualquiera que coordine, supervise o administre la sede).
+  const seatReservations = canPlan && event.status === "programado" ? (await loadSeatReservations(supabase, event.date, event.date)).filter((r) => r.siteId === event.siteId) : [];
   const today = todayCo();
   // Quien apoya no ve el nombre de un grupo ajeno con sus permisos normales.
   if (event.groupId && !event.groupName) event.groupName = ((await supabase.rpc("event_group_name", { p_event: event.id })).data as string | null) ?? null;
@@ -86,6 +90,14 @@ export default async function ServicePage({ params, searchParams }: PageProps<"/
         <p role="status" className="rounded-2xl border border-danger/60 bg-danger/10 p-4">
           Este servicio está cancelado{event.cancelReason ? `: ${event.cancelReason}` : ""}. Ese turno se pierde y la rotación sigue con el grupo de la semana siguiente.
         </p>
+      )}
+
+      {seatReservations.length > 0 && (
+        <section aria-label="Reservas de puestos" className="space-y-2 rounded-2xl border-2 border-accent bg-surface p-4">
+          <h2 className="text-lg font-extrabold">Reservas de puestos de este día</h2>
+          <p className="text-sm text-muted">Puestos reservados: tenlos en cuenta al acomodar a las personas.</p>
+          <ReservationList items={seatReservations} />
+        </section>
       )}
 
       {tabs.length > 1 && <Tabs tabs={tabs} current={tab} base={`/servicio/${event.id}`} />}

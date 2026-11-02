@@ -12,6 +12,29 @@ const navLink = "shrink-0 whitespace-nowrap rounded-lg px-3 py-2 !text-on-header
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   if (!user.privacyAccepted) redirect("/aceptar");
+  // Quien solo tiene el rol de reservas: encabezado mínimo (Inicio y Perfil), sin menú ni asistente.
+  if (user.reserverOnly) {
+    return (
+      <>
+        <header className="sticky top-0 z-30 bg-header text-on-header shadow">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5">
+            <Link href="/" className="text-sm font-extrabold tracking-[0.2em] !text-on-header no-underline">LOGIAI</Link>
+            <nav aria-label="Principal" className="flex flex-1 items-center gap-1 text-sm font-semibold">
+              <Link href="/" className={navLink}>Inicio</Link>
+              <Link href="/perfil" className={navLink}>Perfil</Link>
+            </nav>
+            <div className="ml-auto flex items-center gap-3">
+              <ThemeToggle />
+              <form action="/auth/signout" method="post">
+                <button type="submit" className="rounded-lg border border-white/30 px-3 py-2 text-sm font-semibold hover:bg-white/10">Salir</button>
+              </form>
+            </div>
+          </div>
+        </header>
+        <div className="mx-auto w-full max-w-6xl px-4 py-6">{children}</div>
+      </>
+    );
+  }
   // Solicitudes de apoyo que la persona puede atender y aún no ha respondido (contador del menú).
   const pending = (await loadOpenRequests(await createClient())).filter((r) => r.myStatus === null).length;
 

@@ -16,6 +16,7 @@ export type InviteResult = { added: string[]; existing: string[]; invalid: strin
 type InviteTarget =
   | { kind: "group"; groupId: string; role: GroupRole }
   | { kind: "leader"; siteIds: string[] }
+  | { kind: "reserver"; siteIds: string[] }
   | { kind: "head" }
   | { kind: "admin" };
 
@@ -25,10 +26,12 @@ export async function inviteEmails(sb: SupabaseClient, text: string, target: Inv
   if (!valid.length) throw new Error(invalid.length ? "Ninguno de los correos es válido." : "Escribe al menos un correo.");
   if (valid.length > MAX_EMAILS) throw new Error(`Máximo ${MAX_EMAILS} correos por vez.`);
   if (target.kind === "leader" && !target.siteIds.length) throw new Error("Elige al menos una sede para el líder.");
+  if (target.kind === "reserver" && !target.siteIds.length) throw new Error("Elige al menos una sede para las reservas.");
 
   const base =
     target.kind === "group" ? { group_id: target.groupId, group_role: target.role }
     : target.kind === "leader" ? { leader_site_ids: target.siteIds }
+    : target.kind === "reserver" ? { reserver_site_ids: target.siteIds }
     : target.kind === "head" ? { is_head: true }
     : { is_admin: true };
   const rows = valid.map((email) => ({ email, ...base }));
@@ -87,4 +90,12 @@ export async function addLeaderSite(sb: SupabaseClient, userId: string, siteId: 
 }
 export async function removeLeaderSite(sb: SupabaseClient, userId: string, siteId: string) {
   must(await sb.from("site_leaders").delete().eq("user_id", userId).eq("site_id", siteId));
+}
+
+// ───────────── Rol «Reservas» ─────────────
+export async function addReserverSite(sb: SupabaseClient, userId: string, siteId: string) {
+  must(await sb.from("site_reservers").insert({ user_id: userId, site_id: siteId }));
+}
+export async function removeReserverSite(sb: SupabaseClient, userId: string, siteId: string) {
+  must(await sb.from("site_reservers").delete().eq("user_id", userId).eq("site_id", siteId));
 }

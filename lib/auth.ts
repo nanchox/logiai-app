@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { GROUP_ROLE_LABEL, serviceLabel } from "@/lib/labels";
@@ -13,6 +14,10 @@ export type CurrentUser = {
   isAdmin: boolean;
   isHead: boolean;
   leaderSites: Site[];
+  /** Sedes en las que puede registrar reservas de puestos (rol adicional «Reservas»). */
+  reserverSites: Site[];
+  /** Solo tiene el rol de reservas: ingresa y únicamente llena el cuadro de reservas. */
+  reserverOnly: boolean;
   membership: { role: string; groupId: string; groupName: string; service: string; day: string; shift: string; site: Site } | null;
   /** Puede ver la sección Personas: admin, cabeza, líder de sede o coordinador. */
   canManagePeople: boolean;
@@ -42,9 +47,10 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return null;
 
-  const [profileRes, leadersRes, membershipRes, consentRes] = await Promise.all([
+  const [profileRes, leadersRes, reserversRes, membershipRes, consentRes] = await Promise.all([
     supabase.from("profiles").select("full_name, is_admin, is_head").eq("user_id", auth.user.id).maybeSingle(),
     supabase.from("site_leaders").select("sites(id, slug, name)").eq("user_id", auth.user.id),
+    supabase.rpc("my_reserver_sites"),
     supabase
       .from("memberships")
       .select("role, group_id, groups(name, service_slots(day, shift, sites(id, slug, name)))")
@@ -56,6 +62,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   if (!profile) return null;
 
   const leaderSites = ((leadersRes.data ?? []) as unknown as { sites: Site }[]).map((r) => r.sites);
+  const reserverSites = (reserversRes.data ?? []) as Site[];
   const m = membershipRes.data as unknown as MembershipRow | null;
   const membership = m
     ? {
@@ -77,7 +84,9 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
         ? "Líder de sede"
         : membership
           ? (GROUP_ROLE_LABEL[membership.role] ?? membership.role)
-          : "Sin grupo";
+          : reserverSites.length
+            ? "Reservas"
+            : "Sin grupo";
 
   return {
     id: auth.user.id,
@@ -87,6 +96,8 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     isAdmin: profile.is_admin,
     isHead: profile.is_head,
     leaderSites,
+    reserverSites,
+    reserverOnly: reserverSites.length > 0 && !profile.is_admin && !profile.is_head && leaderSites.length === 0 && !membership,
     membership,
     canManagePeople: profile.is_admin || profile.is_head || leaderSites.length > 0 || membership?.role === "coordinador",
     canManageGroups: profile.is_admin || profile.is_head || leaderSites.length > 0,
@@ -104,5 +115,10 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
 export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) redirect("/auth/expired");
+  // Quien solo tiene el rol de reservas únicamente usa el inicio (su cuadro) y su perfil; el proxy envía la ruta en un encabezado.
+  if (user.reserverOnly) {
+    const path = (await headers()).get("x-pathname") ?? "/";
+    if (path !== "/" && path !== "/perfil" && path !== "/aceptar") redirect("/");
+  }
   return user;
 }
