@@ -128,6 +128,18 @@ export default async function ServicePage({ params, searchParams }: PageProps<"/
 
       {tab === "apoyos" && canPlan && isNext && <SupportPanel event={event} people={people} request={request} applications={applications} positions={positions} />}
 
+      {tab === "conteos" && live && canPlan && event.date === today && entrances.some((e) => countLocations.some((l) => l.id === e.locationId)) && (
+        <section aria-label="Contador digital" className="space-y-2 rounded-2xl border-2 border-accent bg-surface p-4">
+          <h2 className="text-lg font-extrabold">Contador digital</h2>
+          <p className="text-sm text-muted">Abre el contador de una entrada en pantalla completa para contar con el botón grande.</p>
+          <ul className="flex flex-wrap gap-2">
+            {entrances.filter((e) => countLocations.some((l) => l.id === e.locationId)).map((e) => (
+              <li key={e.id}><Link href={`/contador/${event.id}/${e.id}`} className="inline-block rounded-xl bg-primary px-4 py-3 font-bold !text-on-primary no-underline">🔢 {e.name} <span className="font-normal">· {countLocations.find((l) => l.id === e.locationId)?.name}</span></Link></li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {tab === "conteos" && live && (
         <CountPanel eventId={event.id} date={event.date} day={event.day} locations={countLocations} counts={counts} guide={guide} canSeeCounts={canPlan} canCount={canPlan && canCountNow(event.date, today, canManage)} window={countWindow(event.date, today)} manager={canManage} log={countLog} zones={zones} reservationDefaults={rsvDefaults} reservations={rsvOverrides} entrances={entrances} meetings={meetings} standardQuotas={stdQuotas} eventQuotas={evQuotas} entranceCounters={counters} roleReservations={seatReservations.map((r) => ({ zoneId: r.zoneId, meetingTime: r.meetingTime, seats: r.seats }))} />
       )}

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ReserveDialog } from "@/components/reservations/ReserveDialog";
 import { ReservationForm } from "@/components/reservations/ReservationForm";
 import { ReservationList } from "@/components/reservations/ReservationList";
 import { loadReserverMeetings, loadReserverZones, loadSeatReservations } from "@/lib/reservations/load";
@@ -24,7 +25,8 @@ export default async function HomePage() {
   const supabase = await createClient();
 
   // Rol «Reservas»: el cuadro para registrar reservas de puestos. Quien solo tiene ese rol no ve nada más.
-  const [reserverZones, myReservations, reserverMeetings] = user.reserverSites.length > 0
+  const manageSites = user.isAdmin || user.isHead || user.leaderSites.length > 0;   // pueden reservar por defecto, sin necesitar el rol «Reservas»
+  const [reserverZones, myReservations, reserverMeetings] = user.reserverSites.length > 0 || manageSites
     ? await Promise.all([loadReserverZones(supabase), loadSeatReservations(supabase, todayCo()), loadReserverMeetings(supabase)])
     : [[], [], []];
   if (user.reserverOnly) {
@@ -105,7 +107,7 @@ export default async function HomePage() {
         </section>
       )}
 
-      {user.reserverSites.length > 0 && <ReservationForm zones={reserverZones} mine={myReservations.filter((r) => r.mine)} today={todayCo()} meetings={reserverMeetings} />}
+      {user.reserverSites.length > 0 && !manageSites && <ReservationForm zones={reserverZones} mine={myReservations.filter((r) => r.mine)} today={todayCo()} meetings={reserverMeetings} />}
 
       {shortcuts && (
         <section aria-label="Atajos" className="space-y-3">
@@ -146,10 +148,15 @@ export default async function HomePage() {
               </ul>
             )}
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-label="Accesos rápidos">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" role="group" aria-label="Accesos rápidos">
+            {manageSites && <ReserveDialog zones={reserverZones} mine={myReservations.filter((r) => r.mine)} today={todayCo()} meetings={reserverMeetings} canManage />}
             <Link href="/conteos" className="block rounded-2xl border border-line bg-surface p-4 no-underline hover:border-primary">
               <span className="text-lg font-bold text-fg">Conteos</span>
               <span className="mt-1 block text-sm text-muted">Registrar y revisar cuántas personas entraron.</span>
+            </Link>
+            <Link href="/contador" className="block rounded-2xl border border-line bg-surface p-4 no-underline hover:border-primary">
+              <span className="text-lg font-bold text-fg">Contador digital</span>
+              <span className="mt-1 block text-sm text-muted">Contar con el botón grande, en pantalla completa (el día del servicio).</span>
             </Link>
             {manuals.map((m) => (
               <Link key={m.href} href={m.href} className="block rounded-2xl border border-line bg-surface p-4 no-underline hover:border-primary">
