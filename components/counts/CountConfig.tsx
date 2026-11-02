@@ -6,7 +6,9 @@ import { btn, btnDanger, btnPrimary, ErrorText, input, label } from "@/component
 import { DAY_LABEL, LOCATION_KIND_LABEL } from "@/lib/labels";
 import { createClient } from "@/lib/supabase/client";
 import { deleteGuide, saveCapacity, saveGuideNote, saveReservationDefault, uploadGuide } from "@/lib/counts/mutations";
-import type { CountGuide, CountLocation, ReservationDefault, ReservationZone } from "@/lib/counts/types";
+import type { CountGuide, CountLocation, Entrance, EntranceQuota, ReservationDefault, ReservationZone } from "@/lib/counts/types";
+import type { Meeting } from "@/lib/service/meetings";
+import { EntrancesConfig } from "./EntrancesConfig";
 
 type Site = { id: string; slug: string; name: string };
 const DAYS = ["miercoles", "sabado", "domingo"] as const;
@@ -23,7 +25,12 @@ function useAction() {
   return { busy, error, done, run };
 }
 
-export function CountConfig({ sites, locations, guides, zones, defaults }: { sites: Site[]; locations: CountLocation[]; guides: CountGuide[]; zones: ReservationZone[]; defaults: ReservationDefault[] }) {
+type Slot = { id: string; siteId: string; day: string; shift: string };
+
+export function CountConfig({ sites, locations, guides, zones, defaults, entrances, quotas, slots, meetings }: {
+  sites: Site[]; locations: CountLocation[]; guides: CountGuide[]; zones: ReservationZone[]; defaults: ReservationDefault[];
+  entrances: Entrance[]; quotas: EntranceQuota[]; slots: Slot[]; meetings: Record<string, Meeting[]>;
+}) {
   if (!sites.length) return <p className="text-muted">No hay sedes disponibles.</p>;
   return (
     <div className="space-y-8">
@@ -31,6 +38,7 @@ export function CountConfig({ sites, locations, guides, zones, defaults }: { sit
         <section key={s.id} aria-label={s.name} className="space-y-4">
           <h2 className="text-xl font-extrabold">{s.name}</h2>
           <Capacity site={s} locations={locations.filter((l) => l.siteId === s.id)} />
+          <EntrancesConfig siteName={s.name} locations={locations.filter((l) => l.siteId === s.id)} entrances={entrances} quotas={quotas} slots={slots.filter((x) => x.siteId === s.id)} meetings={meetings} />
           <Reservations site={s} zones={zones.filter((z) => z.siteId === s.id)} defaults={defaults} />
           <Guides site={s} guides={guides.filter((g) => g.siteId === s.id)} />
         </section>
@@ -130,7 +138,7 @@ function Guides({ site, guides }: { site: Site; guides: CountGuide[] }) {
         <h3 className="text-lg font-extrabold">Guía de conteo (imagen)</h3>
         <p className="text-sm text-muted">Una imagen por día de la semana que indica cómo y dónde contar en cada entrada. Se repite cada semana hasta que la reemplaces. La ve el grupo que sirve ese día.</p>
       </div>
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-3">
         {DAYS.map((d) => <GuideDay key={d} site={site} day={d} guide={guides.find((g) => g.day === d) ?? null} />)}
       </div>
     </div>
@@ -143,7 +151,7 @@ function GuideDay({ site, day, guide }: { site: Site; day: string; guide: CountG
   const [note, setNote] = useState(guide?.note ?? "");
   const title = DAY_LABEL[day];
   return (
-    <article aria-label={`Guía del ${title} en ${site.name}`} className="space-y-2 rounded-xl border border-line bg-bg p-3">
+    <article aria-label={`Guía del ${title} en ${site.name}`} className="min-w-0 space-y-2 rounded-xl border border-line bg-bg p-3">
       <h4 className="font-bold">{title}</h4>
       {guide?.url ? (
         <a href={guide.url} target="_blank" rel="noreferrer">

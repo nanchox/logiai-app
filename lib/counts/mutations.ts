@@ -64,3 +64,43 @@ export async function saveServiceReservations(sb: SupabaseClient, eventId: strin
   const { error } = (await sb.rpc("save_reservations", { p_event: eventId, p_items: items.map((i) => ({ zone_id: i.zoneId, seats: i.seats })) })) as { error: PgError };
   if (error) throw explain(error);
 }
+
+// ───────────── Entradas ─────────────
+export async function createEntrance(sb: SupabaseClient, locationId: string, name: string, note: string) {
+  if (!name.trim()) throw new Error("Escribe el nombre de la entrada.");
+  if (name.trim().length > 60) throw new Error("El nombre de la entrada es demasiado largo (máximo 60 caracteres).");
+  if (note.trim().length > 200) throw new Error("La nota es demasiado larga (máximo 200 caracteres).");
+  const { error } = await sb.from("entrances").insert({ location_id: locationId, name: name.trim(), note: note.trim() || null });
+  if (error) throw explain(error);
+}
+export async function updateEntrance(sb: SupabaseClient, id: string, name: string, note: string) {
+  if (!name.trim()) throw new Error("Escribe el nombre de la entrada.");
+  if (note.trim().length > 200) throw new Error("La nota es demasiado larga (máximo 200 caracteres).");
+  const { error } = await sb.from("entrances").update({ name: name.trim(), note: note.trim() || null }).eq("id", id);
+  if (error) throw explain(error);
+}
+export async function deleteEntrance(sb: SupabaseClient, id: string) {
+  const { error } = await sb.from("entrances").delete().eq("id", id);
+  if (error) throw explain(error);
+}
+
+const validQuota = (n: number | null) => n === null || (Number.isInteger(n) && n >= 0 && n <= 100000);
+
+/** Cupo estándar de una entrada en una reunión del horario. Vacío (null) lo quita. */
+export async function saveStandardQuota(sb: SupabaseClient, entranceId: string, meetingId: string, quota: number | null) {
+  if (!validQuota(quota)) throw new Error("El cupo debe ser un número entero entre 0 y 100000.");
+  if (quota === null) {
+    const { error } = await sb.from("entrance_quotas").delete().eq("entrance_id", entranceId).eq("meeting_id", meetingId);
+    if (error) throw explain(error);
+    return;
+  }
+  const { error } = await sb.from("entrance_quotas").upsert({ entrance_id: entranceId, meeting_id: meetingId, quota }, { onConflict: "entrance_id,meeting_id" });
+  if (error) throw explain(error);
+}
+
+/** Ajusta los cupos de un servicio (todo o nada). Vacío (null) vuelve al estándar. */
+export async function saveEventQuotas(sb: SupabaseClient, eventId: string, items: { entranceId: string; meetingId: string; quota: number | null }[]) {
+  if (items.some((i) => !validQuota(i.quota))) throw new Error("El cupo debe ser un número entero entre 0 y 100000.");
+  const { error } = (await sb.rpc("save_event_quotas", { p_event: eventId, p_items: items.map((i) => ({ entrance_id: i.entranceId, meeting_id: i.meetingId, quota: i.quota })) })) as { error: PgError };
+  if (error) throw explain(error);
+}

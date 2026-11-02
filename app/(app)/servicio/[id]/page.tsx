@@ -15,7 +15,7 @@ import { Tabs, pickTab, type TabItem } from "@/components/service/Tabs";
 import { requireUser } from "@/lib/auth";
 import { serviceLabel } from "@/lib/labels";
 import { formatServiceDate } from "@/lib/service/dates";
-import { loadCountLocations, loadCountLog, loadCounts, loadGuides, loadReservationDefaults, loadReservationOverrides, loadReservationZones } from "@/lib/counts/load";
+import { loadCountLocations, loadCountLog, loadCounts, loadEntranceQuotas, loadEntrances, loadEventQuotas, loadGuides, loadReservationDefaults, loadReservationOverrides, loadReservationZones } from "@/lib/counts/load";
 import { canCountNow, countWindow } from "@/lib/counts/window";
 import { addDays, todayCo } from "@/lib/service/dates";
 import { loadEvent, loadEvents, loadPlan, loadPlanPositions, loadRotationGroups } from "@/lib/service/load";
@@ -47,7 +47,7 @@ export default async function ServicePage({ params, searchParams }: PageProps<"/
   const [request] = await Promise.all([isNext ? loadEventRequest(supabase, event.id) : Promise.resolve(null)]);
   const applications = request ? await loadApplications(supabase, request.id) : [];
   // Conteos: la guía la ven quienes sirven ese día; los totales, quienes planifican el servicio.
-  const [guides, countLocations, counts, countLog, zones, rsvDefaults, rsvOverrides] = event.status === "programado" && event.groupId
+  const [guides, countLocations, counts, countLog, zones, rsvDefaults, rsvOverrides, entrances, stdQuotas, evQuotas] = event.status === "programado" && event.groupId
     ? await Promise.all([
         loadGuides(supabase, event.siteId),
         loadCountLocations(supabase, event.siteId),
@@ -56,8 +56,11 @@ export default async function ServicePage({ params, searchParams }: PageProps<"/
         canPlan ? loadReservationZones(supabase, event.siteId) : Promise.resolve([]),
         canPlan ? loadReservationDefaults(supabase) : Promise.resolve([]),
         canPlan ? loadReservationOverrides(supabase, event.id) : Promise.resolve([]),
+        canPlan ? loadEntrances(supabase) : Promise.resolve([]),
+        canPlan ? loadEntranceQuotas(supabase) : Promise.resolve([]),
+        canPlan ? loadEventQuotas(supabase, event.id) : Promise.resolve([]),
       ])
-    : [[], [], [], [], [], [], []];
+    : [[], [], [], [], [], [], [], [], [], []];
   const guide = guides.find((g) => g.day === event.day) ?? null;
   // Reservas de puestos de ese día en la sede, para quien planifica (las ve cualquiera que coordine, supervise o administre la sede).
   const seatReservations = canPlan && event.status === "programado" ? (await loadSeatReservations(supabase, event.date, event.date)).filter((r) => r.siteId === event.siteId) : [];
@@ -125,7 +128,7 @@ export default async function ServicePage({ params, searchParams }: PageProps<"/
       {tab === "apoyos" && canPlan && isNext && <SupportPanel event={event} people={people} request={request} applications={applications} positions={positions} />}
 
       {tab === "conteos" && live && (
-        <CountPanel eventId={event.id} date={event.date} day={event.day} locations={countLocations} counts={counts} guide={guide} canSeeCounts={canPlan} canCount={canPlan && canCountNow(event.date, today, canManage)} window={countWindow(event.date, today)} manager={canManage} log={countLog} zones={zones} reservationDefaults={rsvDefaults} reservations={rsvOverrides} />
+        <CountPanel eventId={event.id} date={event.date} day={event.day} locations={countLocations} counts={counts} guide={guide} canSeeCounts={canPlan} canCount={canPlan && canCountNow(event.date, today, canManage)} window={countWindow(event.date, today)} manager={canManage} log={countLog} zones={zones} reservationDefaults={rsvDefaults} reservations={rsvOverrides} entrances={entrances} meetings={meetings} standardQuotas={stdQuotas} eventQuotas={evQuotas} />
       )}
 
       {tab === "posiciones" && live && (

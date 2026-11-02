@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { addDays } from "@/lib/service/dates";
 import { loadEvents } from "@/lib/service/load";
 import type { ServiceEvent } from "@/lib/service/types";
-import type { CountGuide, CountLocation, CountLogEntry, CountRow, ReservationDefault, ReservationOverride, ReservationZone } from "./types";
+import type { CountGuide, CountLocation, CountLogEntry, CountRow, Entrance, EntranceQuota, EventQuota, ReservationDefault, ReservationOverride, ReservationZone } from "./types";
 
 /** Ubicaciones visibles (de las sedes que la persona ve) con su capacidad. */
 export async function loadCountLocations(supabase: SupabaseClient, siteId?: string): Promise<CountLocation[]> {
@@ -80,4 +80,24 @@ export async function loadReservationDefaults(supabase: SupabaseClient): Promise
 export async function loadReservationOverrides(supabase: SupabaseClient, eventId: string): Promise<ReservationOverride[]> {
   const { data } = await supabase.from("service_reservations").select("zone_id, seats").eq("event_id", eventId);
   return (data ?? []).map((r) => ({ zoneId: r.zone_id, seats: r.seats }));
+}
+
+/** Entradas de las ubicaciones que la persona ve (de la sede dada, si se indica). */
+export async function loadEntrances(supabase: SupabaseClient, locationIds?: string[]): Promise<Entrance[]> {
+  let q = supabase.from("entrances").select("id, location_id, name, note, sort");
+  if (locationIds) { if (!locationIds.length) return []; q = q.in("location_id", locationIds); }
+  const { data } = await q.order("sort").order("name");
+  return (data ?? []).map((e) => ({ id: e.id, locationId: e.location_id, name: e.name, note: e.note, sort: e.sort }));
+}
+
+/** Cupos estándar por entrada y reunión. */
+export async function loadEntranceQuotas(supabase: SupabaseClient): Promise<EntranceQuota[]> {
+  const { data } = await supabase.from("entrance_quotas").select("entrance_id, meeting_id, quota");
+  return (data ?? []).map((r) => ({ entranceId: r.entrance_id, meetingId: r.meeting_id, quota: r.quota }));
+}
+
+/** Ajustes de cupo de un servicio. */
+export async function loadEventQuotas(supabase: SupabaseClient, eventId: string): Promise<EventQuota[]> {
+  const { data } = await supabase.from("event_entrance_quotas").select("entrance_id, meeting_id, quota").eq("event_id", eventId);
+  return (data ?? []).map((r) => ({ entranceId: r.entrance_id, meetingId: r.meeting_id, quota: r.quota }));
 }
