@@ -1846,3 +1846,44 @@ test('rol Reservas · quién lo da, qué puede hacer (solo registrar reservas de
   await invRes(U.admin, 'pend2@x.com', [U.sCas]);
   assert.equal(await as(U.liderCamp, async () => (await db.query(`delete from public.invitations where email = 'pend2@x.com'`)).affectedRows), 0, 'no las de otra sede');
 });
+
+test('reservas de puestos · quien administra la sede las edita (líder de su sede, cabeza y administrador); los demás no', async () => {
+  const zC = (await one(`select z.id from public.zones z join public.locations l on l.id = z.location_id where l.site_id = $1 order by z.name limit 1`, [U.sCamp])).id;
+  const zC2 = (await one(`insert into public.zones (location_id, name) values ($1, 'Zona editable 2') returning id`, [U.locA])).id;
+  const zN = (await one(`select z.id from public.zones z join public.locations l on l.id = z.location_id where l.site_id = $1 limit 1`, [U.sCas])).id;
+  const day = async (n) => (await one(`select (public.today_co() + $1::int)::text d`, [n])).d;
+  const [today, later, past, far] = [await day(0), await day(5), await day(-3), await day(121)];
+  const id = (await one(`insert into public.seat_reservations (site_id, zone_id, service_date, row_label, seats, for_whom) values ($1, $2, $3, 'A', 2, 'Original') returning id`, [U.sCamp, zC, today])).id;
+  const old = (await one(`insert into public.seat_reservations (site_id, zone_id, service_date, row_label, seats, for_whom) values ($1, $2, $3, 'B', 4, 'Pasada') returning id`, [U.sCamp, zC, past])).id;
+  const upd = (uid, rid, zone, date, row, seats, who) => rpc(uid, `select public.update_seat_reservation($1, $2, $3::date, $4, $5, $6)`, [rid, zone, date, row, seats, who]);
+  const now = async (rid) => one(`select zone_id, service_date::text d, row_label, seats, for_whom from public.seat_reservations where id = $1`, [rid]);
+
+  // Quién edita
+  await denied(() => upd(U.cR1, id, zC, today, 'A', 2, 'x'), /No tienes permiso/, 'el coordinador solo las ve');
+  await denied(() => upd(U.vR1, id, zC, today, 'A', 2, 'x'), /No tienes permiso/);
+  await denied(() => upd(U.liderNogal2, id, zC, today, 'A', 2, 'x'), /No tienes permiso/, 'el líder de otra sede no');
+  await denied(() => upd(U.admin, '00000000-0000-4000-8000-000000000000', zC, today, 'A', 2, 'x'), /No tienes permiso/);
+  await upd(U.liderCamp, id, zC2, later, 'C3', 7, 'Editada por el líder');
+  assert.deepEqual(await now(id), { zone_id: zC2, d: later, row_label: 'C3', seats: 7, for_whom: 'Editada por el líder' });
+  await upd(U.admin, id, zC, today, 'D', 3, 'Editada por el admin');
+  assert.equal((await now(id)).for_whom, 'Editada por el admin');
+  await upd(U.cabeza, id, zC, today, 'E', 1, 'Editada por la cabeza');
+  assert.equal((await now(id)).row_label, 'E');
+  // Validación
+  await denied(() => upd(U.liderCamp, id, zN, today, 'A', 2, 'x'), /misma sede/, 'zona de otra sede');
+  await denied(() => upd(U.liderCamp, id, zC, past, 'A', 2, 'x'), /de hoy en adelante/, 'mover a una fecha pasada no');
+  await denied(() => upd(U.liderCamp, id, zC, far, 'A', 2, 'x'), /de hoy en adelante/);
+  await denied(() => upd(U.liderCamp, id, zC, today, '', 2, 'x'), /Escribe la fila/);
+  await denied(() => upd(U.liderCamp, id, zC, today, 'A', 0, 'x'), /de 1 a 10000/);
+  await denied(() => upd(U.liderCamp, id, zC, today, 'A', 2, ''), /para quién/);
+  // Corregir una de un día pasado sin mover la fecha sí se puede
+  await upd(U.liderCamp, old, zC, past, 'B2', 5, 'Pasada corregida');
+  assert.equal((await now(old)).seats, 5);
+  assert.equal((await now(old)).d, past);
+  // Quién las ve para editar: el líder de su sede las lista; el de otra sede, no
+  const seen = (uid) => as(uid, async () => (await rows(`select for_whom from public.seat_reservations_for(public.today_co() - 30, public.today_co() + 120) where for_whom like 'Pasada%'`)).length);
+  assert.equal(await seen(U.liderCamp), 1);
+  assert.equal(await seen(U.liderNogal2), 0);
+  // No se pueden editar directo en la tabla
+  await denied(() => as(U.liderCamp, () => db.query(`update public.seat_reservations set seats = 99 where id = $1`, [id])), /permission denied/);
+});
