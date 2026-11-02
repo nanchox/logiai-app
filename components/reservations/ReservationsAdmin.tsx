@@ -4,12 +4,13 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { btn, btnDanger, btnPrimary, ErrorText, input, label, ModalDialog } from "@/components/manual/ui";
 import { deleteReservation, updateReservation } from "@/lib/reservations/mutations";
-import { MAX_RESERVATION_DAYS, type ReserverZone, type SeatReservation } from "@/lib/reservations/types";
-import { addDays, formatServiceDateShort } from "@/lib/service/dates";
+import { MAX_RESERVATION_DAYS, type ReserverMeeting, type ReserverZone, type SeatReservation } from "@/lib/reservations/types";
+import { addDays, formatServiceDateShort, weekdayKey } from "@/lib/service/dates";
+import { formatMeetingTime } from "@/lib/service/meetings";
 import { createClient } from "@/lib/supabase/client";
 
 /** Reservas de puestos de las sedes que la persona administra: se pueden revisar, editar y quitar. */
-export function ReservationsAdmin({ items, zones, today }: { items: SeatReservation[]; zones: ReserverZone[]; today: string }) {
+export function ReservationsAdmin({ items, zones, today, meetings = [] }: { items: SeatReservation[]; zones: ReserverZone[]; today: string; meetings?: ReserverMeeting[] }) {
   const sb = useMemo(() => createClient(), []);
   const router = useRouter();
   const [when, setWhen] = useState<"proximas" | "anteriores">("proximas");
@@ -49,6 +50,7 @@ export function ReservationsAdmin({ items, zones, today }: { items: SeatReservat
               <span className="font-semibold">{formatServiceDateShort(r.date)}</span>
               {sites.length > 1 && <span className="text-xs font-bold uppercase tracking-wider text-muted">{r.siteName}</span>}
               <span>{r.zoneName} <span className="text-muted">· {r.locationName} · fila {r.row}</span></span>
+              <span className="rounded-full border border-line px-2 py-0.5 text-xs font-semibold">{r.meetingTime ? `Reunión ${formatMeetingTime(r.meetingTime)}` : "Todas las reuniones"}</span>
               <span className="rounded-full bg-badge px-2 py-0.5 text-xs font-bold text-on-badge">{r.seats} {r.seats === 1 ? "puesto" : "puestos"}</span>
               <span className="min-w-0 flex-1 basis-40">Para: <strong>{r.forWhom}</strong>{r.byName && <span className="text-muted"> · registró {r.byName}</span>}</span>
               <button type="button" className={btn} aria-label={`Editar la reserva de ${r.forWhom}`} onClick={() => { setError(null); setEditing(r); }}>Editar</button>
@@ -65,13 +67,13 @@ export function ReservationsAdmin({ items, zones, today }: { items: SeatReservat
       <ErrorText error={error} />
 
       <ModalDialog open={editing !== null} onClose={() => setEditing(null)} size="lg" title="Editar reserva">
-        {editing && <EditForm key={editing.id} r={editing} zones={zones.filter((z) => z.siteId === editing.siteId)} today={today} onClose={() => setEditing(null)} />}
+        {editing && <EditForm key={editing.id} r={editing} zones={zones.filter((z) => z.siteId === editing.siteId)} meetings={meetings.filter((m) => m.siteId === editing.siteId)} today={today} onClose={() => setEditing(null)} />}
       </ModalDialog>
     </section>
   );
 }
 
-function EditForm({ r, zones, today, onClose }: { r: SeatReservation; zones: ReserverZone[]; today: string; onClose: () => void }) {
+function EditForm({ r, zones, meetings, today, onClose }: { r: SeatReservation; zones: ReserverZone[]; meetings: ReserverMeeting[]; today: string; onClose: () => void }) {
   const sb = useMemo(() => createClient(), []);
   const router = useRouter();
   const initialZone = zones.find((z) => z.zoneName === r.zoneName && z.locationName === r.locationName)?.zoneId ?? zones[0]?.zoneId ?? "";
@@ -80,6 +82,11 @@ function EditForm({ r, zones, today, onClose }: { r: SeatReservation; zones: Res
   const [row, setRow] = useState(r.row);
   const [seats, setSeats] = useState(String(r.seats));
   const [forWhom, setForWhom] = useState(r.forWhom);
+  const [meeting, setMeeting] = useState(r.meetingTime ?? "");
+  // Reuniones estándar del día de la semana de la fecha (más la actual de la reserva, aunque ya no esté en la lista)
+  const meetingOptions: { time: string; label: string | null }[] = meetings.filter((m) => m.day === weekdayKey(date)).map((m) => ({ time: m.time, label: m.label }));
+  if (r.meetingTime && !meetingOptions.some((m) => m.time === r.meetingTime)) meetingOptions.push({ time: r.meetingTime, label: null });
+  meetingOptions.sort((a, b) => a.time.localeCompare(b.time));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const groups = [...zones.reduce((m, z) => m.set(z.locationName, [...(m.get(z.locationName) ?? []), z]), new Map<string, ReserverZone[]>()).entries()];
@@ -88,7 +95,7 @@ function EditForm({ r, zones, today, onClose }: { r: SeatReservation; zones: Res
     e.preventDefault();
     setBusy(true); setError(null);
     try {
-      await updateReservation(sb, r.id, { zoneId, date, row, seats: Number(seats), forWhom });
+      await updateReservation(sb, r.id, { zoneId, date, row, seats: Number(seats), forWhom, meeting });
       router.refresh();
       onClose();
     } catch (err) { setError((err as Error).message); setBusy(false); }
@@ -107,6 +114,13 @@ function EditForm({ r, zones, today, onClose }: { r: SeatReservation; zones: Res
             <label className={label} htmlFor="er-zone">Zona</label>
             <select id="er-zone" className={input} value={zoneId} onChange={(e) => setZoneId(e.target.value)}>
               {groups.map(([loc, list]) => <optgroup key={loc} label={loc}>{list.map((z) => <option key={z.zoneId} value={z.zoneId}>{z.zoneName}</option>)}</optgroup>)}
+            </select>
+          </div>
+          <div className="sm:col-span-2">
+            <label className={label} htmlFor="er-meeting">Reunión</label>
+            <select id="er-meeting" className={input} value={meeting} onChange={(e) => setMeeting(e.target.value)}>
+              <option value="">Todas las reuniones del día</option>
+              {meetingOptions.map((m) => <option key={m.time} value={m.time}>{formatMeetingTime(m.time)}{m.label ? ` · ${m.label}` : ""}</option>)}
             </select>
           </div>
           <div>

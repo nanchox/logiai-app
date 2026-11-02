@@ -128,7 +128,7 @@ export default async function ServicePage({ params, searchParams }: PageProps<"/
       {tab === "apoyos" && canPlan && isNext && <SupportPanel event={event} people={people} request={request} applications={applications} positions={positions} />}
 
       {tab === "conteos" && live && (
-        <CountPanel eventId={event.id} date={event.date} day={event.day} locations={countLocations} counts={counts} guide={guide} canSeeCounts={canPlan} canCount={canPlan && canCountNow(event.date, today, canManage)} window={countWindow(event.date, today)} manager={canManage} log={countLog} zones={zones} reservationDefaults={rsvDefaults} reservations={rsvOverrides} entrances={entrances} meetings={meetings} standardQuotas={stdQuotas} eventQuotas={evQuotas} />
+        <CountPanel eventId={event.id} date={event.date} day={event.day} locations={countLocations} counts={counts} guide={guide} canSeeCounts={canPlan} canCount={canPlan && canCountNow(event.date, today, canManage)} window={countWindow(event.date, today)} manager={canManage} log={countLog} zones={zones} reservationDefaults={rsvDefaults} reservations={rsvOverrides} entrances={entrances} meetings={meetings} standardQuotas={stdQuotas} eventQuotas={evQuotas} roleReservations={seatReservations.map((r) => ({ zoneId: r.zoneId, meetingTime: r.meetingTime, seats: r.seats }))} />
       )}
 
       {tab === "posiciones" && live && (

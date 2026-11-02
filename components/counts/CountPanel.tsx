@@ -9,6 +9,7 @@ import { DAY_LABEL } from "@/lib/labels";
 import { addDays, formatServiceDate } from "@/lib/service/dates";
 import type { Meeting } from "@/lib/service/meetings";
 import type { CountGuide, CountLocation, CountLogEntry, CountRow, Entrance, EntranceQuota, EventQuota, ReservationDefault, ReservationOverride, ReservationZone } from "@/lib/counts/types";
+import { BalanceSummary } from "./BalanceSummary";
 import { EventQuotas } from "./EventQuotas";
 import { ReservationsForm } from "./ReservationsForm";
 import { type CountWindow } from "@/lib/counts/window";
@@ -21,12 +22,13 @@ const pct = (n: number, cap: number) => (cap > 0 ? Math.round((n / cap) * 1000) 
 export function CountPanel({
   eventId, date, day, locations, counts, guide, canCount, window: win, manager, canSeeCounts, log,
   zones = [], reservationDefaults = [], reservations = [], showGuide = true,
-  entrances = [], meetings = [], standardQuotas = [], eventQuotas = [],
+  entrances = [], meetings = [], standardQuotas = [], eventQuotas = [], roleReservations = [],
 }: {
   eventId: string; date: string; day: string; locations: CountLocation[]; counts: CountRow[]; guide: CountGuide | null;
   canCount: boolean; window: CountWindow; manager: boolean; canSeeCounts: boolean; log: CountLogEntry[];
   zones?: ReservationZone[]; reservationDefaults?: ReservationDefault[]; reservations?: ReservationOverride[]; showGuide?: boolean;
   entrances?: Entrance[]; meetings?: Meeting[]; standardQuotas?: EntranceQuota[]; eventQuotas?: EventQuota[];
+  roleReservations?: { zoneId: string; meetingTime: string | null; seats: number }[];
 }) {
   const sb = useMemo(() => createClient(), []);
   const router = useRouter();
@@ -114,11 +116,15 @@ export function CountPanel({
       )}
 
       {canSeeCounts && zones.length > 0 && (
-        <ReservationsForm eventId={eventId} day={day} zones={zones} defaults={reservationDefaults} overrides={reservations} canEdit={canCount} manager={manager} />
+        <ReservationsForm eventId={eventId} day={day} zones={zones} defaults={reservationDefaults} overrides={reservations} canEdit={canCount} manager={manager} meetings={meetings} />
       )}
 
       {canSeeCounts && entrances.length > 0 && (
         <EventQuotas eventId={eventId} locations={locations} entrances={entrances} meetings={meetings} standard={standardQuotas} overrides={eventQuotas} canEdit={canCount} />
+      )}
+
+      {canSeeCounts && entrances.length > 0 && (
+        <BalanceSummary locations={locations} entrances={entrances} zones={zones} meetings={meetings} day={day} standardQuotas={standardQuotas} eventQuotas={eventQuotas} defaults={reservationDefaults} overrides={reservations} roleReservations={roleReservations} />
       )}
 
       {manager && log.length > 0 && (

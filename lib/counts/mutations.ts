@@ -46,22 +46,24 @@ export async function saveServiceCounts(sb: SupabaseClient, eventId: string, val
 
 const validSeats = (n: number | null) => n === null || (Number.isInteger(n) && n >= 0 && n <= 10000);
 
-/** Predeterminado de puestos reservados de una zona en un día de la semana. Vacío (null) lo quita. */
-export async function saveReservationDefault(sb: SupabaseClient, zoneId: string, day: string, seats: number | null) {
+/** Predeterminado de puestos reservados de una zona en un día de la semana, para una reunión o para todas (meetingId nulo). Vacío (null) lo quita. */
+export async function saveReservationDefault(sb: SupabaseClient, zoneId: string, day: string, meetingId: string | null, seats: number | null) {
   if (!validSeats(seats)) throw new Error("Los puestos reservados deben ser un número entero entre 0 y 10000.");
   if (seats === null) {
-    const { error } = await sb.from("zone_reservation_defaults").delete().eq("zone_id", zoneId).eq("day", day);
+    let q = sb.from("zone_reservation_defaults").delete().eq("zone_id", zoneId).eq("day", day);
+    q = meetingId ? q.eq("meeting_id", meetingId) : q.is("meeting_id", null);
+    const { error } = await q;
     if (error) throw explain(error);
     return;
   }
-  const { error } = await sb.from("zone_reservation_defaults").upsert({ zone_id: zoneId, day, seats, updated_at: new Date().toISOString() }, { onConflict: "zone_id,day" });
+  const { error } = await sb.from("zone_reservation_defaults").upsert({ zone_id: zoneId, day, meeting_id: meetingId, seats, updated_at: new Date().toISOString() }, { onConflict: "zone_id,day,meeting_key" });
   if (error) throw explain(error);
 }
 
-/** Ajusta las reservas de un servicio (todo o nada). Vacío (null) vuelve al predeterminado del día. */
-export async function saveServiceReservations(sb: SupabaseClient, eventId: string, items: { zoneId: string; seats: number | null }[]) {
+/** Ajusta las reservas de un servicio (todo o nada), por zona y reunión (meetingId nulo = todas). Vacío (null) vuelve al predeterminado. */
+export async function saveServiceReservations(sb: SupabaseClient, eventId: string, items: { zoneId: string; meetingId?: string | null; seats: number | null }[]) {
   if (items.some((i) => !validSeats(i.seats))) throw new Error("Los puestos reservados deben ser un número entero entre 0 y 10000.");
-  const { error } = (await sb.rpc("save_reservations", { p_event: eventId, p_items: items.map((i) => ({ zone_id: i.zoneId, seats: i.seats })) })) as { error: PgError };
+  const { error } = (await sb.rpc("save_reservations", { p_event: eventId, p_items: items.map((i) => ({ zone_id: i.zoneId, ...(i.meetingId ? { meeting_id: i.meetingId } : {}), seats: i.seats })) })) as { error: PgError };
   if (error) throw explain(error);
 }
 

@@ -1692,7 +1692,7 @@ test('reservas por zona · predeterminado por día (lo define el líder) y ajust
   // Servicios: el de hoy de las pruebas anteriores, uno futuro y uno de hace 40 días (fuera del plazo)
   const mkEv = async (offset) => (await one(`insert into public.service_events (slot_id, service_date, group_id, kind, turn) values ($1, public.today_co() + $2::int, $3, 'rotacion', 0) returning id`, [U.slotCamp, offset, U.gR1])).id;
   const evT = U.evToday, evF = await mkEv(41), evO = await mkEv(-40);
-  const dflt = (uid, zone, day, seats) => as(uid, () => db.query(`insert into public.zone_reservation_defaults (zone_id, day, seats) values ($1, $2, $3) on conflict (zone_id, day) do update set seats = excluded.seats`, [zone, day, seats]));
+  const dflt = (uid, zone, day, seats) => as(uid, () => db.query(`insert into public.zone_reservation_defaults (zone_id, day, seats) values ($1, $2, $3) on conflict (zone_id, day, meeting_key) do update set seats = excluded.seats`, [zone, day, seats]));
   const saveRes = (uid, ev, arr) => rpc(uid, `select public.save_reservations($1, $2::jsonb)`, [ev, JSON.stringify(arr)]);
   const seats = async (uid) => as(uid, async () => (await rows(`select seats from public.service_reservations where event_id = $1`, [evT])).map((r) => r.seats));
 
@@ -2023,4 +2023,56 @@ test('entradas · las define quien administra la sede; cupo estándar por reuni�
   // Si se elimina la entrada, se van sus cupos
   await as(U.liderCamp, () => db.query(`delete from public.entrances where id = $1`, [der]));
   assert.equal(await count('entrance_quotas', `entrance_id = '${der}'`), 0);
+});
+
+test('reservas por reunión · predeterminadas por zona, día y reunión; ajuste del servicio por reunión; reservas del rol por hora', async () => {
+  const zA = (await one(`insert into public.zones (location_id, name) values ($1, 'Zona por reunión') returning id`, [U.locA])).id;
+  const meets = (await rows(`select id, to_char(start_time, 'HH24:MI') t from public.slot_meetings where slot_id = $1 order by start_time`, [U.slotCamp]));
+  const [m1, m2] = [meets[0], meets[1]];
+  const dflt = (uid, meeting, seats) => as(uid, () => db.query(`insert into public.zone_reservation_defaults (zone_id, day, meeting_id, seats) values ($1, 'domingo', $2, $3) on conflict (zone_id, day, meeting_key) do update set seats = excluded.seats`, [zA, meeting, seats]));
+  const all = (z) => rows(`select to_char(m.start_time, 'HH24:MI') t, d.seats from public.zone_reservation_defaults d left join public.slot_meetings m on m.id = d.meeting_id where d.zone_id = $1 order by m.start_time nulls first`, [z]);
+  // Predeterminado para todas las reuniones del día y para una en particular
+  await dflt(U.liderCamp, null, 10);
+  await dflt(U.liderCamp, m1.id, 14);
+  await dflt(U.liderCamp, m1.id, 15);                     // actualizar
+  assert.deepEqual((await all(zA)).map((r) => [r.t, r.seats]), [[null, 10], [m1.t, 15]]);
+  await denied(() => dflt(U.cR1, m2.id, 1), /row-level security/);
+  // La reunión debe ser del mismo día y sede
+  const slotCas = (await one(`select id from public.service_slots where site_id = $1 limit 1`, [U.sCas])).id;
+  const mCas = (await one(`insert into public.slot_meetings (slot_id, start_time) values ($1, '11:00') returning id`, [slotCas])).id;
+  await denied(() => dflt(U.admin, mCas, 5), /no es de ese día/);
+  // Lo ven quienes sirven ese día en la sede
+  assert.equal(await as(U.cR1, async () => (await rows(`select 1 from public.zone_reservation_defaults where zone_id = $1`, [zA])).length), 2);
+  assert.equal(await as(U.vol1, async () => (await rows(`select 1 from public.zone_reservation_defaults where zone_id = $1`, [zA])).length), 0);
+
+  // Ajuste de un servicio por reunión
+  const saveRes = (uid, ev, arr) => rpc(uid, `select public.save_reservations($1, $2::jsonb)`, [ev, JSON.stringify(arr)]);
+  const mineRes = async () => (await rows(`select to_char(m.start_time, 'HH24:MI') t, r.seats from public.service_reservations r left join public.slot_meetings m on m.id = r.meeting_id where r.event_id = $1 and r.zone_id = $2 order by m.start_time nulls first`, [U.evToday, zA])).map((r) => [r.t, r.seats]);
+  await saveRes(U.cR1, U.evToday, [{ zone_id: zA, seats: 12 }, { zone_id: zA, meeting_id: m1.id, seats: 20 }, { zone_id: zA, meeting_id: m2.id, seats: 8 }]);
+  assert.deepEqual(await mineRes(), [[null, 12], [m1.t, 20], [m2.t, 8]]);
+  await saveRes(U.cR1, U.evToday, [{ zone_id: zA, meeting_id: m2.id, seats: 9 }]);
+  assert.deepEqual(await mineRes(), [[null, 12], [m1.t, 20], [m2.t, 9]]);
+  await saveRes(U.cR1, U.evToday, [{ zone_id: zA, meeting_id: m1.id, seats: null }]);
+  assert.deepEqual(await mineRes(), [[null, 12], [m2.t, 9]], 'vacío vuelve al predeterminado de esa reunión');
+  await denied(() => saveRes(U.cR1, U.evToday, [{ zone_id: zA, meeting_id: mCas, seats: 1 }]), /no es de este servicio/);
+  await denied(() => saveRes(U.cR1, U.evToday, [{ zone_id: zA, meeting_id: 'no-uuid', seats: 1 }]), /no son válidas/);
+  await denied(() => saveRes(U.vR1, U.evToday, [{ zone_id: zA, meeting_id: m1.id, seats: 1 }]), /No puedes registrar/);
+  assert.deepEqual(await mineRes(), [[null, 12], [m2.t, 9]]);
+
+  // Reservas del rol por reunión: una hora concreta o todas
+  const day0 = (await one(`select public.today_co()::text d`)).d;
+  const zN = (await one(`select z.id from public.zones z where z.id = $1`, [zA])).id;
+  const mk = (uid, hour) => rpc(uid, `select public.create_seat_reservation($1, $2::date, 'A', 2, $3, $4::time)`, [zN, day0, `Hora ${hour ?? 'todas'}`, hour]);
+  await mk(U.liderCamp, '13:00'); await mk(U.liderCamp, null);
+  await denied(() => mk(U.liderCamp, '25:00'), /time|hora|invalid/i);
+  const seen = (uid) => as(uid, async () => (await rows(`select for_whom, to_char(meeting_time, 'HH24:MI') t, zone_id is not null z, location_id is not null l from public.seat_reservations_for(public.today_co(), public.today_co()) where for_whom like 'Hora %' order by meeting_time nulls first`)));
+  assert.deepEqual((await seen(U.cR1)).map((r) => [r.for_whom, r.t, r.z, r.l]), [['Hora todas', null, true, true], ['Hora 13:00', '13:00', true, true]]);
+  const id = (await one(`select id from public.seat_reservations where for_whom = 'Hora 13:00'`)).id;
+  await rpc(U.liderCamp, `select public.update_seat_reservation($1, $2, $3::date, 'A', 2, 'Hora 13:00', '15:00')`, [id, zN, day0]);
+  assert.equal((await one(`select to_char(meeting_time, 'HH24:MI') t from public.seat_reservations where id = $1`, [id])).t, '15:00');
+  // Reuniones disponibles para quien reserva
+  const rm = (uid) => as(uid, async () => (await rows(`select site_id, day, to_char(start_time, 'HH24:MI') t from public.reserver_meetings()`)).length);
+  assert.ok(await rm(U.liderCamp) >= 2);
+  assert.equal(await rm(U.vR1), 0);
+  assert.equal(await rm(U.liderNogal2), 0, 'otra sede no');
 });

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ReservationForm } from "@/components/reservations/ReservationForm";
 import { ReservationList } from "@/components/reservations/ReservationList";
-import { loadReserverZones, loadSeatReservations } from "@/lib/reservations/load";
+import { loadReserverMeetings, loadReserverZones, loadSeatReservations } from "@/lib/reservations/load";
 import { RecentAnnouncements } from "@/components/announcements/RecentAnnouncements";
 import { loadAnnouncements } from "@/lib/announcements/load";
 import { ActiveBadge } from "@/components/service/ActiveBadge";
@@ -23,9 +23,9 @@ export default async function HomePage() {
   const supabase = await createClient();
 
   // Rol «Reservas»: el cuadro para registrar reservas de puestos. Quien solo tiene ese rol no ve nada más.
-  const [reserverZones, myReservations] = user.reserverSites.length > 0
-    ? await Promise.all([loadReserverZones(supabase), loadSeatReservations(supabase, todayCo())])
-    : [[], []];
+  const [reserverZones, myReservations, reserverMeetings] = user.reserverSites.length > 0
+    ? await Promise.all([loadReserverZones(supabase), loadSeatReservations(supabase, todayCo()), loadReserverMeetings(supabase)])
+    : [[], [], []];
   if (user.reserverOnly) {
     return (
       <main className="space-y-6">
@@ -36,7 +36,7 @@ export default async function HomePage() {
             {user.reserverSites.map((s) => s.name).join(", ")}
           </p>
         </div>
-        <ReservationForm zones={reserverZones} mine={myReservations.filter((r) => r.mine)} today={todayCo()} />
+        <ReservationForm zones={reserverZones} mine={myReservations.filter((r) => r.mine)} today={todayCo()} meetings={reserverMeetings} />
       </main>
     );
   }
@@ -87,7 +87,7 @@ export default async function HomePage() {
         </p>
       </div>
 
-      {user.reserverSites.length > 0 && <ReservationForm zones={reserverZones} mine={myReservations.filter((r) => r.mine)} today={todayCo()} />}
+      {user.reserverSites.length > 0 && <ReservationForm zones={reserverZones} mine={myReservations.filter((r) => r.mine)} today={todayCo()} meetings={reserverMeetings} />}
 
       {shortcuts && (
         <section aria-label="Atajos" className="space-y-3">

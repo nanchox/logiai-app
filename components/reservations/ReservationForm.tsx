@@ -5,16 +5,18 @@ import { useRouter } from "next/navigation";
 import { btnDanger, btnPrimary, ErrorText, input, label } from "@/components/manual/ui";
 import { createReservation, deleteReservation } from "@/lib/reservations/mutations";
 import type { ReserverZone, SeatReservation } from "@/lib/reservations/types";
-import { MAX_RESERVATION_DAYS } from "@/lib/reservations/types";
-import { addDays, formatServiceDateShort } from "@/lib/service/dates";
+import { MAX_RESERVATION_DAYS, type ReserverMeeting } from "@/lib/reservations/types";
+import { addDays, formatServiceDateShort, weekdayKey } from "@/lib/service/dates";
+import { formatMeetingTime } from "@/lib/service/meetings";
 import { createClient } from "@/lib/supabase/client";
 
 /** El cuadro de reservas: fecha, zona, fila, número de puestos y para quién. Debajo, las reservas que esa persona ha registrado. */
-export function ReservationForm({ zones, mine, today }: { zones: ReserverZone[]; mine: SeatReservation[]; today: string }) {
+export function ReservationForm({ zones, mine, today, meetings = [] }: { zones: ReserverZone[]; mine: SeatReservation[]; today: string; meetings?: ReserverMeeting[] }) {
   const sb = useMemo(() => createClient(), []);
   const router = useRouter();
   const [date, setDate] = useState(today);
   const [zoneId, setZoneId] = useState(zones[0]?.zoneId ?? "");
+  const [meeting, setMeeting] = useState("");                  // «» = todas las reuniones del día
   const [row, setRow] = useState("");
   const [seats, setSeats] = useState("");
   const [forWhom, setForWhom] = useState("");
@@ -28,14 +30,18 @@ export function ReservationForm({ zones, mine, today }: { zones: ReserverZone[];
     return [...m.entries()];
   }, [zones]);
   const sites = new Set(zones.map((z) => z.siteId)).size;
+  // Reuniones estándar de la sede de la zona elegida en el día de la semana de la fecha
+  const siteId = zones.find((z) => z.zoneId === zoneId)?.siteId;
+  const dayMeetings = date ? meetings.filter((m) => m.siteId === siteId && m.day === weekdayKey(date)) : [];
+  const chosenMeeting = dayMeetings.some((m) => m.time === meeting) ? meeting : "";
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true); setError(null); setDone(null);
     try {
-      await createReservation(sb, { zoneId, date, row, seats: Number(seats), forWhom });
+      await createReservation(sb, { zoneId, date, row, seats: Number(seats), forWhom, meeting: chosenMeeting });
       const z = zones.find((x) => x.zoneId === zoneId);
-      setDone(`Reserva guardada: ${seats} ${Number(seats) === 1 ? "puesto" : "puestos"} en ${z?.zoneName ?? "la zona"}, fila ${row.trim()}, para ${forWhom.trim()}.`);
+      setDone(`Reserva guardada: ${seats} ${Number(seats) === 1 ? "puesto" : "puestos"} en ${z?.zoneName ?? "la zona"}, fila ${row.trim()}, para ${forWhom.trim()}${chosenMeeting ? ` (reunión de las ${formatMeetingTime(chosenMeeting)})` : ""}.`);
       setRow(""); setSeats(""); setForWhom("");
       router.refresh();
     } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
@@ -67,6 +73,15 @@ export function ReservationForm({ zones, mine, today }: { zones: ReserverZone[];
               ))}
             </select>
           </div>
+          {dayMeetings.length > 0 && (
+            <div className="sm:col-span-2">
+              <label className={label} htmlFor="rv-meeting">Reunión</label>
+              <select id="rv-meeting" className={input} value={chosenMeeting} onChange={(e) => setMeeting(e.target.value)}>
+                <option value="">Todas las reuniones del día</option>
+                {dayMeetings.map((m) => <option key={m.time} value={m.time}>{formatMeetingTime(m.time)}{m.label ? ` · ${m.label}` : ""}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label className={label} htmlFor="rv-row">Fila</label>
             <input id="rv-row" className={input} value={row} maxLength={20} required onChange={(e) => setRow(e.target.value)} placeholder="Ej.: 5 o D" />
@@ -92,7 +107,7 @@ export function ReservationForm({ zones, mine, today }: { zones: ReserverZone[];
             {mine.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 p-3 text-sm">
                 <span className="font-semibold">{formatServiceDateShort(r.date)}</span>
-                <span>{r.zoneName} · fila {r.row}</span>
+                <span>{r.zoneName} · fila {r.row}{r.meetingTime ? ` · ${formatMeetingTime(r.meetingTime)}` : ""}</span>
                 <span className="rounded-full bg-badge px-2 py-0.5 text-xs font-bold text-on-badge">{r.seats} {r.seats === 1 ? "puesto" : "puestos"}</span>
                 <span className="min-w-0 flex-1 basis-40 text-muted">Para: {r.forWhom}</span>
                 <button type="button" className={btnDanger} disabled={busy} aria-label={`Quitar la reserva de ${r.forWhom}`}

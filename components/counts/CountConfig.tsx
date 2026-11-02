@@ -7,7 +7,7 @@ import { DAY_LABEL, LOCATION_KIND_LABEL } from "@/lib/labels";
 import { createClient } from "@/lib/supabase/client";
 import { deleteGuide, saveCapacity, saveGuideNote, saveReservationDefault, uploadGuide } from "@/lib/counts/mutations";
 import type { CountGuide, CountLocation, Entrance, EntranceQuota, ReservationDefault, ReservationZone } from "@/lib/counts/types";
-import type { Meeting } from "@/lib/service/meetings";
+import { formatMeetingTime, type Meeting } from "@/lib/service/meetings";
 import { EntrancesConfig } from "./EntrancesConfig";
 
 type Site = { id: string; slug: string; name: string };
@@ -38,8 +38,8 @@ export function CountConfig({ sites, locations, guides, zones, defaults, entranc
         <section key={s.id} aria-label={s.name} className="space-y-4">
           <h2 className="text-xl font-extrabold">{s.name}</h2>
           <Capacity site={s} locations={locations.filter((l) => l.siteId === s.id)} />
-          <EntrancesConfig siteName={s.name} locations={locations.filter((l) => l.siteId === s.id)} entrances={entrances} quotas={quotas} slots={slots.filter((x) => x.siteId === s.id)} meetings={meetings} />
-          <Reservations site={s} zones={zones.filter((z) => z.siteId === s.id)} defaults={defaults} />
+          <EntrancesConfig siteName={s.name} locations={locations.filter((l) => l.siteId === s.id)} entrances={entrances} quotas={quotas} slots={slots.filter((x) => x.siteId === s.id)} meetings={meetings} zones={zones.filter((z) => z.siteId === s.id)} defaults={defaults} />
+          <Reservations site={s} zones={zones.filter((z) => z.siteId === s.id)} defaults={defaults} slots={slots.filter((x) => x.siteId === s.id)} meetings={meetings} />
           <Guides site={s} guides={guides.filter((g) => g.siteId === s.id)} />
         </section>
       ))}
@@ -81,47 +81,54 @@ function Capacity({ site, locations }: { site: Site; locations: CountLocation[] 
   );
 }
 
-function Reservations({ site, zones, defaults }: { site: Site; zones: ReservationZone[]; defaults: ReservationDefault[] }) {
+function Reservations({ site, zones, defaults, slots, meetings }: { site: Site; zones: ReservationZone[]; defaults: ReservationDefault[]; slots: Slot[]; meetings: Record<string, Meeting[]> }) {
   const sb = useMemo(() => createClient(), []);
   const { busy, error, done, run } = useAction();
-  const key = (zoneId: string, day: string) => `${zoneId}:${day}`;
-  const initial = useMemo(() => Object.fromEntries(defaults.map((d) => [key(d.zoneId, d.day), String(d.seats)])), [defaults]);
+  const key = (zoneId: string, day: string, meetingId: string | null) => `${zoneId}:${day}:${meetingId ?? "todas"}`;
+  const initial = useMemo(() => Object.fromEntries(defaults.map((d) => [key(d.zoneId, d.day, d.meetingId), String(d.seats)])), [defaults]);
   const [vals, setVals] = useState<Record<string, string>>(initial);
-  const [base, setBase] = useState<Record<string, string>>(initial);   // lo último guardado: lo que se compara para saber qué cambió
-  const cells = zones.flatMap((z) => DAYS.map((d) => ({ zone: z, day: d, k: key(z.id, d) })));
+  const [base, setBase] = useState<Record<string, string>>(initial);
+  // Un bloque por día de la semana: «Todas las reuniones» y una columna por reunión de ese día.
+  const days = DAYS.filter((d) => slots.some((s) => s.day === d)).map((d) => ({ day: d, cols: [{ id: null as string | null, title: "Todas" }, ...slots.filter((s) => s.day === d).flatMap((s) => meetings[s.id] ?? []).map((m) => ({ id: m.id as string | null, title: formatMeetingTime(m.time) + (m.label ? ` · ${m.label}` : "") }))] }));
+  const cells = zones.flatMap((z) => days.flatMap((d) => d.cols.map((c) => ({ zone: z, day: d.day, meetingId: c.id, k: key(z.id, d.day, c.id) }))));
   const changed = cells.filter((c) => (vals[c.k] ?? "") !== (base[c.k] ?? ""));
   const bad = (k: string) => { const v = (vals[k] ?? "").trim(); return v !== "" && (!Number.isInteger(Number(v)) || Number(v) < 0 || Number(v) > 10000); };
   return (
     <form className="space-y-3 rounded-2xl border border-line bg-surface p-5" aria-label={`Reservas por zona de ${site.name}`} onSubmit={(e) => {
       e.preventDefault();
       run(async () => {
-        for (const c of changed) { const v = (vals[c.k] ?? "").trim(); await saveReservationDefault(sb, c.zone.id, c.day, v === "" ? null : Number(v)); }
+        for (const c of changed) { const v = (vals[c.k] ?? "").trim(); await saveReservationDefault(sb, c.zone.id, c.day, c.meetingId, v === "" ? null : Number(v)); }
         setBase({ ...vals });
         return "Reservas predeterminadas guardadas.";
       });
     }}>
       <div>
         <h3 className="text-lg font-extrabold">Reservas por zona (predeterminadas)</h3>
-        <p className="text-sm text-muted">Puestos reservados en una fila de cada zona, por día de la semana. Se repiten cada semana; durante un servicio, el coordinador o el supervisor pueden cambiarlos solo para ese día. Vacío = sin reserva.</p>
+        <p className="text-sm text-muted">Puestos reservados en una fila de cada zona, por día y reunión. «Todas» aplica a todas las reuniones del día; el número de una reunión concreta tiene prioridad. Se repiten cada semana; durante un servicio, el coordinador o el supervisor pueden cambiarlos solo para ese día. Vacío = sin reserva.</p>
       </div>
       {zones.length === 0 ? <p className="text-sm text-muted">Esta sede todavía no tiene zonas: créalas en el Manual (cada espacio tiene sus zonas).</p> : (
-        <div className="overflow-x-auto rounded-lg border border-line">
-          <table className="w-full min-w-[32rem] text-left text-sm">
-            <thead className="bg-bg"><tr><th className="p-2">Zona</th>{DAYS.map((d) => <th key={d} className="p-2">{DAY_LABEL[d]}</th>)}</tr></thead>
-            <tbody className="divide-y divide-line">
-              {zones.map((z) => (
-                <tr key={z.id}>
-                  <th scope="row" className="p-2 font-semibold">{z.name} <span className="font-normal text-muted">· {z.locationName}</span></th>
-                  {DAYS.map((d) => (
-                    <td key={d} className="p-2">
-                      <input type="number" inputMode="numeric" min={0} max={10000} className={`${input} ${bad(key(z.id, d)) ? "!border-danger" : ""}`} aria-label={`Reservas de ${z.name}, ${DAY_LABEL[d]}`}
-                        value={vals[key(z.id, d)] ?? ""} onChange={(e) => setVals({ ...vals, [key(z.id, d)]: e.target.value })} placeholder="—" />
-                    </td>
+        <div className="space-y-4">
+          {days.map((d) => (
+            <div key={d.day} className="overflow-x-auto rounded-lg border border-line">
+              <table className="w-full min-w-[32rem] text-left text-sm" aria-label={`Reservas del ${DAY_LABEL[d.day]}`}>
+                <thead className="bg-bg"><tr><th className="p-2">{DAY_LABEL[d.day]}</th>{d.cols.map((c) => <th key={c.id ?? "todas"} className="p-2">{c.title}</th>)}</tr></thead>
+                <tbody className="divide-y divide-line">
+                  {zones.map((z) => (
+                    <tr key={z.id}>
+                      <th scope="row" className="p-2 font-semibold">{z.name} <span className="font-normal text-muted">· {z.locationName}</span></th>
+                      {d.cols.map((c) => (
+                        <td key={c.id ?? "todas"} className="p-2">
+                          <input type="number" inputMode="numeric" min={0} max={10000} className={`${input} ${bad(key(z.id, d.day, c.id)) ? "!border-danger" : ""}`} aria-label={`Reservas de ${z.name}, ${DAY_LABEL[d.day]}, ${c.id ? c.title : "todas las reuniones"}`}
+                            value={vals[key(z.id, d.day, c.id)] ?? ""} onChange={(e) => setVals({ ...vals, [key(z.id, d.day, c.id)]: e.target.value })} placeholder="—" />
+                        </td>
+                      ))}
+                    </tr>
                   ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                </tbody>
+              </table>
+            </div>
+          ))}
+          {days.length === 0 && <p className="text-sm text-muted">Esta sede todavía no tiene horarios de servicio.</p>}
         </div>
       )}
       <ErrorText error={error} />

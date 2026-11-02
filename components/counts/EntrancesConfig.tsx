@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { btn, btnDanger, btnPrimary, ErrorText, input, label } from "@/components/manual/ui";
 import { createEntrance, deleteEntrance, saveStandardQuota, updateEntrance } from "@/lib/counts/mutations";
-import type { CountLocation, Entrance, EntranceQuota } from "@/lib/counts/types";
+import type { CountLocation, Entrance, EntranceQuota, ReservationDefault, ReservationZone } from "@/lib/counts/types";
+import { BalanceSummary } from "./BalanceSummary";
 import { DAY_LABEL, SHIFT_LABEL } from "@/lib/labels";
 import { formatMeetingTime, type Meeting } from "@/lib/service/meetings";
 import { createClient } from "@/lib/supabase/client";
@@ -24,8 +25,8 @@ function useAction() {
 }
 
 /** Entradas de las ubicaciones de una sede, con su cupo estándar por reunión de cada horario. */
-export function EntrancesConfig({ siteName, locations, entrances, quotas, slots, meetings }: {
-  siteName: string; locations: CountLocation[]; entrances: Entrance[]; quotas: EntranceQuota[]; slots: Slot[]; meetings: Record<string, Meeting[]>;
+export function EntrancesConfig({ siteName, locations, entrances, quotas, slots, meetings, zones, defaults }: {
+  siteName: string; locations: CountLocation[]; entrances: Entrance[]; quotas: EntranceQuota[]; slots: Slot[]; meetings: Record<string, Meeting[]>; zones: ReservationZone[]; defaults: ReservationDefault[];
 }) {
   return (
     <div className="space-y-3 rounded-2xl border border-line bg-surface p-5" role="group" aria-label={`Entradas de ${siteName}`}>
@@ -35,13 +36,13 @@ export function EntrancesConfig({ siteName, locations, entrances, quotas, slots,
       </div>
       {locations.length === 0 && <p className="text-sm text-muted">Esta sede todavía no tiene ubicaciones: créalas en el Manual.</p>}
       {locations.map((l) => (
-        <LocationEntrances key={l.id} location={l} entrances={entrances.filter((e) => e.locationId === l.id)} quotas={quotas} slots={slots} meetings={meetings} />
+        <LocationEntrances key={l.id} location={l} entrances={entrances.filter((e) => e.locationId === l.id)} quotas={quotas} slots={slots} meetings={meetings} zones={zones.filter((z) => z.locationId === l.id)} defaults={defaults} />
       ))}
     </div>
   );
 }
 
-function LocationEntrances({ location, entrances, quotas, slots, meetings }: { location: CountLocation; entrances: Entrance[]; quotas: EntranceQuota[]; slots: Slot[]; meetings: Record<string, Meeting[]> }) {
+function LocationEntrances({ location, entrances, quotas, slots, meetings, zones, defaults }: { location: CountLocation; entrances: Entrance[]; quotas: EntranceQuota[]; slots: Slot[]; meetings: Record<string, Meeting[]>; zones: ReservationZone[]; defaults: ReservationDefault[] }) {
   const sb = useMemo(() => createClient(), []);
   const { busy, error, done, run } = useAction();
   const [name, setName] = useState("");
@@ -67,7 +68,11 @@ function LocationEntrances({ location, entrances, quotas, slots, meetings }: { l
       </form>
       <ErrorText error={error} />
       {entrances.length > 0 && slots.map((s) => (
-        <QuotaTable key={s.id} slot={s} location={location} entrances={entrances} quotas={quotas} meetings={meetings[s.id] ?? []} />
+        <div key={s.id} className="space-y-3">
+          <QuotaTable slot={s} location={location} entrances={entrances} quotas={quotas} meetings={meetings[s.id] ?? []} />
+          <BalanceSummary title={`Cuadre estándar · ${[DAY_LABEL[s.day], SHIFT_LABEL[s.shift]].filter(Boolean).join(" ")}`} locations={[location]} entrances={entrances} zones={zones} meetings={meetings[s.id] ?? []} day={s.day}
+            standardQuotas={quotas} eventQuotas={[]} defaults={defaults} overrides={[]} roleReservations={[]} />
+        </div>
       ))}
       {done && <p role="status" className="text-sm text-muted">{done}</p>}
     </article>
