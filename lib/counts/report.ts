@@ -2,7 +2,13 @@
 import type { ServiceEvent } from "@/lib/service/types";
 import type { CountLocation, CountRow } from "./types";
 
-export type ReportItem = { locationId: string; name: string; capacity: number | null; total: number | null };
+export type ReportItem = {
+  locationId: string; name: string;
+  /** Aforo de la ubicación; si se contó en varias reuniones, el de todas ellas juntas (aforo × reuniones contadas). */
+  capacity: number | null; total: number | null;
+  /** En cuántas reuniones se contó (1 = un total del servicio). */
+  meetings: number;
+};
 export type ServiceReport = {
   event: ServiceEvent;
   items: ReportItem[];
@@ -22,11 +28,16 @@ export type SiteReport = {
 const pct = (total: number, capacity: number) => (capacity > 0 ? Math.round((total / capacity) * 1000) / 10 : null);
 
 export function buildServiceReport(event: ServiceEvent, counts: CountRow[], locations: CountLocation[], today: string): ServiceReport {
-  const mine = new Map(counts.filter((c) => c.eventId === event.id).map((c) => [c.locationId, c.total]));
-  const items = locations
+  // Un total por ubicación (registro manual de todo el servicio) o uno por reunión (contador digital): se suman, y el aforo se cuenta una vez por cada uno.
+  const mine = new Map<string, { total: number; rows: number }>();
+  for (const c of counts.filter((x) => x.eventId === event.id)) {
+    const cur = mine.get(c.locationId) ?? { total: 0, rows: 0 };
+    mine.set(c.locationId, { total: cur.total + c.total, rows: cur.rows + 1 });
+  }
+  const items: ReportItem[] = locations
     .filter((l) => l.siteId === event.siteId)
     .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "es"))
-    .map((l) => ({ locationId: l.id, name: l.name, capacity: l.capacity, total: mine.get(l.id) ?? null }));
+    .map((l) => { const m = mine.get(l.id); return { locationId: l.id, name: l.name, capacity: l.capacity === null ? null : l.capacity * Math.max(1, m?.rows ?? 1), total: m ? m.total : null, meetings: m?.rows ?? 0 }; });
   const counted = items.filter((i) => i.total !== null);
   const total = counted.reduce((s, i) => s + (i.total ?? 0), 0);
   const capacity = counted.reduce((s, i) => s + (i.capacity ?? 0), 0);

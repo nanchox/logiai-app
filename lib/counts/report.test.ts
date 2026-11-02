@@ -74,3 +74,19 @@ test("plazo de captura: desde el día del servicio; quien planifica hasta el fin
   assert.equal(canCountNow("2030-01-13", "2030-01-15", true), true);
   assert.equal(canCountNow("2030-01-13", "2030-01-14", false), true);
 });
+
+test("conteo por reuniones: se suman los totales y el aforo se cuenta una vez por cada reunión contada", () => {
+  const counts: CountRow[] = [
+    { eventId: "e1", locationId: "aud", meetingId: "m1", total: 400 },
+    { eventId: "e1", locationId: "aud", meetingId: "m2", total: 300 },
+    { eventId: "e1", locationId: "teat", meetingId: "m1", total: 50 },
+  ];
+  const s = buildSiteReport("A", "Sede A", [ev("e1", "2030-01-13", "am")], counts, locs, TODAY).days[0].services[0];
+  assert.equal(s.total, 750);
+  assert.equal(s.capacity, 500 * 2 + 100, "el auditorio se contó en 2 reuniones y el teatro en 1");
+  assert.equal(s.occupancy, Math.round((750 / 1100) * 1000) / 10);
+  assert.deepEqual(s.items.map((i) => [i.name, i.total, i.meetings]), [["Auditorio", 700, 2], ["Teatro", 50, 1]]);
+  // El registro manual de todo el servicio sigue siendo una sola fila
+  const manual = buildSiteReport("A", "Sede A", [ev("e1", "2030-01-13", "am")], [{ eventId: "e1", locationId: "aud", total: 400 }], locs, TODAY).days[0].services[0];
+  assert.deepEqual([manual.total, manual.capacity, manual.items[0].meetings], [400, 500, 1]);
+});

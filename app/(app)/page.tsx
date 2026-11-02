@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ReservationForm } from "@/components/reservations/ReservationForm";
 import { ReservationList } from "@/components/reservations/ReservationList";
 import { loadReserverMeetings, loadReserverZones, loadSeatReservations } from "@/lib/reservations/load";
+import { loadMyCounterEntrances } from "@/lib/counter/load";
 import { RecentAnnouncements } from "@/components/announcements/RecentAnnouncements";
 import { loadAnnouncements } from "@/lib/announcements/load";
 import { ActiveBadge } from "@/components/service/ActiveBadge";
@@ -40,6 +41,7 @@ export default async function HomePage() {
       </main>
     );
   }
+  const counterEntries = await loadMyCounterEntrances(supabase);
   const recent = (await loadAnnouncements(supabase, 30)).filter((a) => a.status === "active").slice(0, 3);
   const requests = (await loadOpenRequests(supabase)).slice(0, 3);
   const nextService = user.membership
@@ -86,6 +88,22 @@ export default async function HomePage() {
           {scope}
         </p>
       </div>
+
+      {counterEntries.length > 0 && (
+        <section aria-label="Contador de entradas" className="space-y-2 rounded-2xl border-2 border-accent bg-surface p-4">
+          <h2 className="text-lg font-extrabold">Hoy cuentas la entrada</h2>
+          <ul className="space-y-2">
+            {counterEntries.slice(0, 4).map((e) => (
+              <li key={`${e.eventId}-${e.entranceId}`}>
+                <Link href={`/contador/${e.eventId}/${e.entranceId}`} className="block rounded-xl bg-primary p-4 text-center text-lg font-extrabold !text-on-primary no-underline hover:brightness-105">
+                  🔢 Contar: {e.entranceName} <span className="block text-sm font-normal">{e.locationName} · {e.siteName}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {counterEntries.length > 4 && <p className="text-sm"><Link href="/contador">Ver todas las entradas →</Link></p>}
+        </section>
+      )}
 
       {user.reserverSites.length > 0 && <ReservationForm zones={reserverZones} mine={myReservations.filter((r) => r.mine)} today={todayCo()} meetings={reserverMeetings} />}
 

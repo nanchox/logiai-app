@@ -1,6 +1,9 @@
 export type CountLocation = { id: string; siteId: string; name: string; kind: string; capacity: number | null; sort: number };
 export type CountGuide = { siteId: string; day: string; path: string; url: string | null; note: string | null; updatedAt: string };
-export type CountRow = { eventId: string; locationId: string; total: number };
+/** meetingId nulo = total de todo el servicio (registro manual); si no, el total de esa reunión (contador digital). */
+export type CountRow = { eventId: string; locationId: string; meetingId?: string | null; total: number };
+/** Conteo actual de una entrada en una reunión de un servicio (contador digital). */
+export type EntranceCounterRow = { entranceId: string; meetingId: string; count: number };
 export type CountLogEntry = { changedAt: string; name: string | null; locationName: string; oldTotal: number | null; newTotal: number | null };
 export type ReservationZone = { id: string; siteId: string; locationId: string; locationName: string; name: string; sort: number };
 /** meetingId nulo = todas las reuniones del día. */

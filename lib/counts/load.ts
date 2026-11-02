@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { addDays } from "@/lib/service/dates";
 import { loadEvents } from "@/lib/service/load";
 import type { ServiceEvent } from "@/lib/service/types";
-import type { CountGuide, CountLocation, CountLogEntry, CountRow, Entrance, EntranceQuota, EventQuota, ReservationDefault, ReservationOverride, ReservationZone } from "./types";
+import type { CountGuide, CountLocation, CountLogEntry, CountRow, Entrance, EntranceCounterRow, EntranceQuota, EventQuota, ReservationDefault, ReservationOverride, ReservationZone } from "./types";
 
 /** Ubicaciones visibles (de las sedes que la persona ve) con su capacidad. */
 export async function loadCountLocations(supabase: SupabaseClient, siteId?: string): Promise<CountLocation[]> {
@@ -26,8 +26,8 @@ export async function loadGuides(supabase: SupabaseClient, siteId?: string): Pro
 /** Totales de los servicios dados (solo llegan los que la persona puede ver). */
 export async function loadCounts(supabase: SupabaseClient, eventIds: string[]): Promise<CountRow[]> {
   if (!eventIds.length) return [];
-  const { data } = await supabase.from("service_counts").select("event_id, location_id, total").in("event_id", eventIds);
-  return (data ?? []).map((c) => ({ eventId: c.event_id, locationId: c.location_id, total: c.total }));
+  const { data } = await supabase.from("service_counts").select("event_id, location_id, meeting_id, total").in("event_id", eventIds);
+  return (data ?? []).map((c) => ({ eventId: c.event_id, locationId: c.location_id, meetingId: c.meeting_id ?? null, total: c.total }));
 }
 
 export async function loadCountLog(supabase: SupabaseClient, eventId: string): Promise<CountLogEntry[]> {
@@ -100,4 +100,10 @@ export async function loadEntranceQuotas(supabase: SupabaseClient): Promise<Entr
 export async function loadEventQuotas(supabase: SupabaseClient, eventId: string): Promise<EventQuota[]> {
   const { data } = await supabase.from("event_entrance_quotas").select("entrance_id, meeting_id, quota").eq("event_id", eventId);
   return (data ?? []).map((r) => ({ entranceId: r.entrance_id, meetingId: r.meeting_id, quota: r.quota }));
+}
+
+/** Conteo digital por entrada y reunión de un servicio (lo ven quienes lo planifican). */
+export async function loadEntranceCounters(supabase: SupabaseClient, eventId: string): Promise<EntranceCounterRow[]> {
+  const { data } = await supabase.from("entrance_counters").select("entrance_id, meeting_id, count").eq("event_id", eventId);
+  return (data ?? []).map((r) => ({ entranceId: r.entrance_id, meetingId: r.meeting_id, count: r.count }));
 }
