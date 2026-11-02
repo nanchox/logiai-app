@@ -7,7 +7,7 @@ import type { CountLocation, CountRow } from "./types";
 
 const ev = (id: string, date: string, shift: string, o: Partial<ServiceEvent> = {}): ServiceEvent => ({
   id, slotId: "s", siteId: "A", siteName: "Sede A", siteSlug: "a", day: "domingo", shift, date, groupId: "g", groupName: "G1", kind: "rotacion", manual: false, status: "programado",
-  cancelReason: null, note: null, ...o,
+  cancelReason: null, note: null, meetingsCustom: false, ...o,
 });
 const locs: CountLocation[] = [
   { id: "aud", siteId: "A", name: "Auditorio", kind: "auditorio", capacity: 500, sort: 1 },

@@ -1,18 +1,19 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { sortMeetings, type Meeting } from "./meetings";
 import type { Cancellation, EventKind, EventStatus, HistoryItem, PlanData, PlanPosition, RotationGroup, ServiceEvent } from "./types";
 
 type EventRow = {
   id: string; slot_id: string; service_date: string; group_id: string | null; kind: EventKind; manual: boolean;
-  status: EventStatus; cancel_reason: string | null; note: string | null;
+  status: EventStatus; cancel_reason: string | null; note: string | null; meetings_custom: boolean;
   service_slots: { site_id: string; day: string; shift: string; sites: { name: string; slug: string } };
   groups: { name: string } | null;
 };
-const EVENT_SELECT = "id, slot_id, service_date, group_id, kind, manual, status, cancel_reason, note, service_slots(site_id, day, shift, sites(name, slug)), groups(name)";
+const EVENT_SELECT = "id, slot_id, service_date, group_id, kind, manual, status, cancel_reason, note, meetings_custom, service_slots(site_id, day, shift, sites(name, slug)), groups(name)";
 
 const toEvent = (r: EventRow): ServiceEvent => ({
   id: r.id, slotId: r.slot_id, siteId: r.service_slots.site_id, siteName: r.service_slots.sites.name, siteSlug: r.service_slots.sites.slug,
   day: r.service_slots.day, shift: r.service_slots.shift, date: r.service_date, groupId: r.group_id, groupName: r.groups?.name ?? null,
-  kind: r.kind, manual: r.manual, status: r.status, cancelReason: r.cancel_reason, note: r.note,
+  kind: r.kind, manual: r.manual, status: r.status, cancelReason: r.cancel_reason, note: r.note, meetingsCustom: r.meetings_custom ?? false,
 });
 
 /** Servicios que el usuario puede ver (lo decide RLS), de más cercano a más lejano. */
@@ -116,4 +117,23 @@ export async function loadLastRotationDates(supabase: SupabaseClient): Promise<R
   const last: Record<string, string> = {};
   for (const r of data ?? []) if (!(r.slot_id in last)) last[r.slot_id] = r.service_date;
   return last;
+}
+
+/** Reuniones estándar de cada horario (por id de horario). */
+export async function loadSlotMeetings(supabase: SupabaseClient): Promise<Record<string, Meeting[]>> {
+  const { data } = await supabase.from("slot_meetings").select("id, slot_id, start_time, label");
+  const out: Record<string, Meeting[]> = {};
+  for (const r of data ?? []) (out[r.slot_id] ??= []).push({ id: r.id, baseId: null, time: String(r.start_time).slice(0, 5), label: r.label });
+  for (const k of Object.keys(out)) out[k] = sortMeetings(out[k]);
+  return out;
+}
+
+/** Reuniones de un servicio: las suyas si se personalizaron; si no, las estándar de su horario. */
+export async function loadEventMeetings(supabase: SupabaseClient, event: Pick<ServiceEvent, "id" | "slotId" | "meetingsCustom">): Promise<Meeting[]> {
+  if (event.meetingsCustom) {
+    const { data } = await supabase.from("event_meetings").select("id, base_id, start_time, label").eq("event_id", event.id);
+    return sortMeetings((data ?? []).map((r) => ({ id: r.id, baseId: r.base_id, time: String(r.start_time).slice(0, 5), label: r.label })));
+  }
+  const { data } = await supabase.from("slot_meetings").select("id, start_time, label").eq("slot_id", event.slotId);
+  return sortMeetings((data ?? []).map((r) => ({ id: r.id, baseId: null, time: String(r.start_time).slice(0, 5), label: r.label })));
 }

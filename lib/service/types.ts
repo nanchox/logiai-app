@@ -17,6 +17,8 @@ export type ServiceEvent = {
   status: EventStatus;
   cancelReason: string | null;
   note: string | null;
+  /** Este servicio tiene sus propias reuniones (no las estándar del horario). */
+  meetingsCustom: boolean;
 };
 
 export type RotationGroup = { id: string; name: string; slotId: string; order: number };

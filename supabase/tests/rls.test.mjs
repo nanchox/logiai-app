@@ -1887,3 +1887,59 @@ test('reservas de puestos · quien administra la sede las edita (líder de su se
   // No se pueden editar directo en la tabla
   await denied(() => as(U.liderCamp, () => db.query(`update public.seat_reservations set seats = 99 where id = $1`, [id])), /permission denied/);
 });
+
+test('reuniones por horario · las define quien administra la sede; un servicio las personaliza o vuelve a las estándar', async () => {
+  const add = (uid, slot, time, label = null) => as(uid, () => db.query(`insert into public.slot_meetings (slot_id, start_time, label) values ($1, $2, $3)`, [slot, time, label]));
+  const list = (uid, slot) => as(uid, async () => (await rows(`select start_time::text t from public.slot_meetings where slot_id = $1 order by start_time`, [slot])).map((r) => r.t.slice(0, 5)));
+  // Quién las define
+  await add(U.liderCamp, U.slotCamp, '13:00');
+  await add(U.liderCamp, U.slotCamp, '15:00', 'Segunda');
+  await add(U.admin, U.slotCamp, '17:00');
+  await add(U.cabeza, U.slotCamp, '19:00');
+  await denied(() => add(U.cR1, U.slotCamp, '20:00'), /row-level security/, 'el coordinador no');
+  await denied(() => add(U.vR1, U.slotCamp, '20:00'), /row-level security/);
+  await denied(() => add(U.liderNogal2, U.slotCamp, '20:00'), /row-level security/, 'el líder de otra sede no');
+  await denied(() => add(U.liderCamp, U.slotCamp, '13:00'), /unique|duplicate/, 'no se repite la hora');
+  await denied(() => add(U.liderCamp, U.slotCamp, '20:00', ''), /check/, 'el nombre, si se escribe, no puede ir vacío');
+  await denied(() => add(U.liderCamp, U.slotCamp, '20:00', 'x'.repeat(41)), /check/);
+  for (const t of ['08:00', '09:00', '10:00', '11:00']) await add(U.liderCamp, U.slotCamp, t);
+  await denied(() => add(U.liderCamp, U.slotCamp, '21:00'), /máximo 8/);
+  // Quién las ve: quienes ven la sede
+  assert.deepEqual((await list(U.cR1, U.slotCamp)).slice(0, 3), ['08:00', '09:00', '10:00']);
+  assert.equal((await list(U.vR1, U.slotCamp)).length, 8);
+  assert.deepEqual(await list(U.vol1, U.slotCamp), [], 'otra sede no');
+  assert.equal(await as(U.cR1, async () => (await db.query(`delete from public.slot_meetings where start_time = '08:00'`)).affectedRows), 0);
+  assert.equal(await as(U.liderCamp, async () => (await db.query(`delete from public.slot_meetings where start_time in ('08:00', '09:00', '10:00', '11:00')`)).affectedRows), 4);
+  assert.deepEqual(await list(U.liderCamp, U.slotCamp), ['13:00', '15:00', '17:00', '19:00']);
+
+  // Servicio: hereda las estándar hasta que se personaliza
+  const ev = (await one(`insert into public.service_events (slot_id, service_date, group_id, kind, turn) values ($1, public.today_co() + 60, $2, 'rotacion', 0) returning id`, [U.slotCamp, U.gR1])).id;
+  const mine = (uid) => as(uid, async () => (await rows(`select start_time::text t, base_id is not null as heredada from public.event_meetings where event_id = $1 order by start_time`, [ev])).map((r) => `${r.t.slice(0, 5)}${r.heredada ? '*' : ''}`));
+  const ins = (uid, time) => as(uid, () => db.query(`insert into public.event_meetings (event_id, start_time) values ($1, $2)`, [ev, time]));
+  assert.equal((await one(`select meetings_custom from public.service_events where id = $1`, [ev])).meetings_custom, false);
+  await denied(() => ins(U.liderCamp, '12:00'), /Primero personaliza/, 'no se agregan reuniones sin personalizar');
+  await denied(() => rpc(U.cR1, `select public.customize_event_meetings($1)`, [ev]), /No tienes permiso/);
+  await denied(() => rpc(U.liderNogal2, `select public.customize_event_meetings($1)`, [ev]), /No tienes permiso/);
+  await rpc(U.liderCamp, `select public.customize_event_meetings($1)`, [ev]);
+  assert.deepEqual(await mine(U.liderCamp), ['13:00*', '15:00*', '17:00*', '19:00*'], 'copia las estándar');
+  assert.equal((await one(`select meetings_custom from public.service_events where id = $1`, [ev])).meetings_custom, true);
+  await rpc(U.liderCamp, `select public.customize_event_meetings($1)`, [ev]);          // repetirlo no duplica
+  assert.equal((await mine(U.liderCamp)).length, 4);
+  await ins(U.admin, '22:00');
+  await as(U.liderCamp, () => db.query(`update public.event_meetings set start_time = '14:00' where event_id = $1 and start_time = '13:00'`, [ev]));
+  await as(U.liderCamp, () => db.query(`delete from public.event_meetings where event_id = $1 and start_time = '19:00'`, [ev]));
+  assert.deepEqual(await mine(U.liderCamp), ['14:00*', '15:00*', '17:00*', '22:00']);
+  assert.deepEqual(await mine(U.cR1), ['14:00*', '15:00*', '17:00*', '22:00'], 'el grupo las ve');
+  assert.deepEqual(await mine(U.vol1), [], 'otra sede no');
+  await denied(() => ins(U.cR1, '23:00'), /row-level security/);
+  assert.deepEqual(await list(U.liderCamp, U.slotCamp), ['13:00', '15:00', '17:00', '19:00'], 'las estándar no cambian');
+  // Volver a las estándar
+  await denied(() => rpc(U.cR1, `select public.reset_event_meetings($1)`, [ev]), /No tienes permiso/);
+  await rpc(U.liderCamp, `select public.reset_event_meetings($1)`, [ev]);
+  assert.deepEqual(await mine(U.liderCamp), []);
+  assert.equal((await one(`select meetings_custom from public.service_events where id = $1`, [ev])).meetings_custom, false);
+  // Si se quita una estándar, la copia del servicio conserva la hora y pierde el vínculo; si se elimina el horario, se van sus reuniones
+  await rpc(U.liderCamp, `select public.customize_event_meetings($1)`, [ev]);
+  await as(U.liderCamp, () => db.query(`delete from public.slot_meetings where slot_id = $1 and start_time = '17:00'`, [U.slotCamp]));
+  assert.deepEqual(await mine(U.liderCamp), ['13:00*', '15:00*', '17:00', '19:00*']);
+});

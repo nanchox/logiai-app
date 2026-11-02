@@ -7,9 +7,12 @@ import { btn, btnDanger, ErrorText, input, label } from "@/components/manual/ui"
 import { createClient } from "@/lib/supabase/client";
 import { addCancellation, deleteEvent, resetEventGroup, saveEventNote, setEventGroup } from "@/lib/service/mutations";
 import type { ServiceEvent } from "@/lib/service/types";
+import { MeetingsEditor } from "./MeetingsEditor";
+import { addEventMeeting, customizeEventMeetings, removeEventMeeting, resetEventMeetings, updateEventMeeting } from "@/lib/service/mutations";
+import { formatMeetingTime, type Meeting } from "@/lib/service/meetings";
 
 /** Controles de quien administra la sede (líder, cabeza, admin): cambiar el grupo, la nota y cancelar. */
-export function EventManage({ event, groups, hasPlan, canAllSites }: { event: ServiceEvent; groups: { id: string; name: string }[]; hasPlan: boolean; canAllSites: boolean }) {
+export function EventManage({ event, groups, hasPlan, canAllSites, meetings }: { event: ServiceEvent; groups: { id: string; name: string }[]; hasPlan: boolean; canAllSites: boolean; meetings: Meeting[] }) {
   const sb = useMemo(() => createClient(), []);
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -32,6 +35,23 @@ export function EventManage({ event, groups, hasPlan, canAllSites }: { event: Se
     <section aria-label="Administrar servicio" className="space-y-4 rounded-2xl border border-line bg-surface p-5">
       <h2 className="text-lg font-extrabold">Administrar este servicio</h2>
       <ErrorText error={error} />
+
+      <div className="space-y-2" role="group" aria-label="Reuniones de este servicio">
+        <h3 className="font-bold">Reuniones de este servicio</h3>
+        {event.meetingsCustom ? (
+          <>
+            <p className="text-sm text-muted">Este servicio tiene sus propias reuniones (por ejemplo, un horario especial). Los cambios solo aplican a este día.</p>
+            <MeetingsEditor title="Reuniones de este servicio" meetings={meetings} busy={busy}
+              onAdd={(t, l) => run(() => addEventMeeting(sb, event.id, t, l))} onUpdate={(id, t, l) => run(() => updateEventMeeting(sb, id, t, l))} onRemove={(id) => run(() => removeEventMeeting(sb, id))} />
+            <button type="button" className={btn} disabled={busy} onClick={() => { if (window.confirm("¿Volver a las reuniones estándar del horario? Se pierden los cambios de este servicio.")) run(() => resetEventMeetings(sb, event.id)); }}>Volver a las reuniones estándar</button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm">{meetings.length ? meetings.map((m) => formatMeetingTime(m.time) + (m.label ? ` · ${m.label}` : "")).join(" · ") : "El horario todavía no tiene reuniones."}</p>
+            <button type="button" className={btn} disabled={busy} onClick={() => run(() => customizeEventMeetings(sb, event.id))}>Personalizar para este servicio</button>
+          </>
+        )}
+      </div>
 
       <form className="flex flex-wrap items-end gap-3" aria-label="Cambiar el grupo que sirve" onSubmit={(e) => {
         e.preventDefault();

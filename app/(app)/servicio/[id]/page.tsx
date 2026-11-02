@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EventManage } from "@/components/service/EventManage";
 import { FilesPanel } from "@/components/service/FilesPanel";
+import { formatMeetingTime } from "@/lib/service/meetings";
+import { loadEventMeetings } from "@/lib/service/load";
 import { ReservationList } from "@/components/reservations/ReservationList";
 import { loadSeatReservations } from "@/lib/reservations/load";
 import { CountPanel } from "@/components/counts/CountPanel";
@@ -60,6 +62,7 @@ export default async function ServicePage({ params, searchParams }: PageProps<"/
   // Reservas de puestos de ese día en la sede, para quien planifica (las ve cualquiera que coordine, supervise o administre la sede).
   const seatReservations = canPlan && event.status === "programado" ? (await loadSeatReservations(supabase, event.date, event.date)).filter((r) => r.siteId === event.siteId) : [];
   const today = todayCo();
+  const meetings = await loadEventMeetings(supabase, event);
   // Quien apoya no ve el nombre de un grupo ajeno con sus permisos normales.
   if (event.groupId && !event.groupName) event.groupName = ((await supabase.rpc("event_group_name", { p_event: event.id })).data as string | null) ?? null;
 
@@ -83,6 +86,13 @@ export default async function ServicePage({ params, searchParams }: PageProps<"/
           <span>{serviceLabel(event.day, event.shift)} · {event.siteName} · <strong className="text-fg">{event.groupName ?? "Sin grupo"}</strong></span>
           <StatusBadges e={event} />
         </p>
+        {meetings.length > 0 && event.status === "programado" && (
+          <div role="group" className="mt-2 flex flex-wrap items-center gap-2 text-sm" aria-label="Reuniones del servicio">
+            <span className="font-semibold">Reuniones:</span>
+            {meetings.map((m) => <span key={m.id} className="rounded-full border border-line bg-surface px-2.5 py-0.5 font-semibold">{formatMeetingTime(m.time)}{m.label ? ` · ${m.label}` : ""}</span>)}
+            {event.meetingsCustom && <span className="text-xs font-bold text-muted">(personalizadas)</span>}
+          </div>
+        )}
         {event.note && <p className="mt-2 whitespace-pre-line rounded-lg border border-line bg-surface p-3 text-sm">{event.note}</p>}
       </div>
 
@@ -108,6 +118,7 @@ export default async function ServicePage({ params, searchParams }: PageProps<"/
           groups={groups.filter((g) => g.slotId === event.slotId)}
           hasPlan={plan.status !== null || plan.assignments.length > 0 || plan.files.length > 0}
           canAllSites={user.isAdmin || user.isHead}
+          meetings={meetings}
         />
       )}
 
