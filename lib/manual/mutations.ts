@@ -48,13 +48,13 @@ export async function removePinFromMap(sb: SupabaseClient, positionId: string, m
 // ───────────── Posiciones ─────────────
 export type PositionInput = {
   code: string; name: string; kind: PositionKind; zoneId: string | null; description: string;
-  usesRadio: boolean; days: string[]; shifts: string[]; isActive: boolean;
+  usesRadio: boolean; days: string[]; shifts: string[]; isActive: boolean; entranceId?: string | null;
 };
 
 export async function savePosition(sb: SupabaseClient, locationId: string, input: PositionInput, id?: string): Promise<string> {
   const row = {
     code: input.code.trim(), name: input.name.trim(), kind: input.kind, zone_id: input.zoneId, description: input.description.trim(),
-    uses_radio: input.usesRadio, days: input.days, shifts: input.shifts, is_active: input.isActive,
+    uses_radio: input.usesRadio, days: input.days, shifts: input.shifts, is_active: input.isActive, entrance_id: input.entranceId ?? null,
   };
   if (!row.code || !row.name) throw new Error("El código y el nombre son obligatorios.");
   if (id) {

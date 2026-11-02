@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ManualClient } from "@/components/manual/ManualClient";
 import { requireUser } from "@/lib/auth";
+import { loadEntrances } from "@/lib/counts/load";
 import { loadLocation } from "@/lib/manual/load";
 import { createClient } from "@/lib/supabase/server";
 
@@ -24,7 +25,7 @@ export default async function LocationPage({ params }: PageProps<"/manual/[site]
   if (!location || !site || site.slug !== slug) notFound();
 
   const canManage = user.isAdmin || user.isHead || user.leaderSites.some((s) => s.id === location.site_id);
-  const data = await loadLocation(supabase, location.id, canManage);
+  const [data, entrances] = await Promise.all([loadLocation(supabase, location.id, canManage), loadEntrances(supabase, [location.id])]);
 
   // Por defecto se muestra el día y la franja del grupo del usuario, si sirve en esta sede.
   const m = user.membership && user.membership.site.slug === slug ? user.membership : null;
@@ -40,6 +41,7 @@ export default async function LocationPage({ params }: PageProps<"/manual/[site]
         locationId={location.id}
         canManage={canManage}
         {...data}
+        entrances={entrances.map((e) => ({ id: e.id, name: e.name }))}
         defaultDay={m?.day ?? "all"}
         defaultShift={m?.shift ?? "all"}
       />

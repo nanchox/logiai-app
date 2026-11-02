@@ -7,7 +7,7 @@ type Embedded<T> = { [k: string]: T } | null;
 export async function loadLocation(supabase: SupabaseClient, locationId: string, includeInactive: boolean) {
   const positionsQuery = supabase
     .from("positions")
-    .select("id, code, name, kind, description, uses_radio, zone_id, days, shifts, is_active, sort, zones(name)")
+    .select("id, code, name, kind, description, uses_radio, entrance_id, zone_id, days, shifts, is_active, sort, zones(name)")
     .eq("location_id", locationId)
     .order("sort")
     .order("code");
@@ -66,6 +66,7 @@ export async function loadLocation(supabase: SupabaseClient, locationId: string,
     kind: p.kind,
     description: p.description,
     usesRadio: p.uses_radio,
+    entranceId: p.entrance_id,
     zoneId: p.zone_id,
     zoneName: (p.zones as unknown as Embedded<string>)?.name ?? null,
     days: p.days ?? [],

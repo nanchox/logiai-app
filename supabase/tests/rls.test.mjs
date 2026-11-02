@@ -2076,3 +2076,24 @@ test('reservas por reunión · predeterminadas por zona, día y reunión; ajuste
   assert.equal(await rm(U.vR1), 0);
   assert.equal(await rm(U.liderNogal2), 0, 'otra sede no');
 });
+
+test('posición de conteo · una posición se liga a una entrada de su misma ubicación; solo quien edita el manual lo hace', async () => {
+  const entA = (await one(`insert into public.entrances (location_id, name) values ($1, 'Entrada de conteo') returning id`, [U.locA])).id;
+  const entB = (await one(`insert into public.entrances (location_id, name) values ($1, 'Entrada de otra ubicación') returning id`, [U.locB])).id;
+  const pos = (await one(`insert into public.positions (location_id, code, name, kind) values ($1, 'CNT1', 'Contador puerta', 'voluntario') returning id`, [U.locA])).id;
+  const link = (uid, e) => as(uid, async () => (await db.query(`update public.positions set entrance_id = $2 where id = $1`, [pos, e])).affectedRows);
+  assert.equal(await link(U.liderCamp, entA), 1);
+  assert.equal((await one(`select entrance_id from public.positions where id = $1`, [pos])).entrance_id, entA);
+  await denied(() => link(U.liderCamp, entB), /misma ubicación/);
+  assert.equal(await link(U.cR1, null), 0, 'el coordinador no edita el manual');
+  assert.equal(await link(U.vR1, null), 0);
+  assert.equal(await link(U.admin, null), 1);
+  await db.query(`update public.positions set entrance_id = $2 where id = $1`, [pos, entA]);
+  // Si se elimina la entrada, la posición queda sin ligar (no se borra)
+  await as(U.liderCamp, () => db.query(`delete from public.entrances where id = $1`, [entA]));
+  assert.equal((await one(`select entrance_id from public.positions where id = $1`, [pos])).entrance_id, null);
+  // Cambiar la posición de ubicación con una entrada ligada se rechaza
+  const entA2 = (await one(`insert into public.entrances (location_id, name) values ($1, 'Otra') returning id`, [U.locA])).id;
+  await db.query(`update public.positions set entrance_id = $2 where id = $1`, [pos, entA2]);
+  await denied(() => db.query(`update public.positions set location_id = $2 where id = $1`, [pos, U.locB]), /misma ubicación/);
+});

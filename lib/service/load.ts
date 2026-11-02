@@ -62,14 +62,14 @@ export async function loadCancellations(supabase: SupabaseClient, from: string):
 export async function loadPlanPositions(supabase: SupabaseClient, siteId: string, day: string, shift: string): Promise<PlanPosition[]> {
   const { data } = await supabase
     .from("positions")
-    .select("id, code, name, kind, uses_radio, days, shifts, sort, is_active, locations!inner(name, site_id, sort)")
+    .select("id, code, name, kind, uses_radio, entrance_id, days, shifts, sort, is_active, entrances(name), locations!inner(name, site_id, sort)")
     .eq("locations.site_id", siteId)
     .eq("is_active", true);
-  type Row = { id: string; code: string; name: string; kind: "supervisor" | "voluntario"; uses_radio: boolean; days: string[]; shifts: string[]; sort: number; locations: { name: string; sort: number } };
+  type Row = { id: string; code: string; name: string; kind: "supervisor" | "voluntario"; uses_radio: boolean; entrance_id: string | null; entrances: { name: string } | null; days: string[]; shifts: string[]; sort: number; locations: { name: string; sort: number } };
   return ((data ?? []) as unknown as Row[])
     .filter((p) => (!p.days.length || p.days.includes(day)) && (!p.shifts.length || p.shifts.includes(shift)))
     .sort((a, b) => a.locations.sort - b.locations.sort || a.locations.name.localeCompare(b.locations.name, "es") || a.sort - b.sort || a.code.localeCompare(b.code, "es", { numeric: true }))
-    .map((p) => ({ id: p.id, code: p.code, name: p.name, kind: p.kind, locationName: p.locations.name, usesRadio: p.uses_radio, sort: p.sort }));
+    .map((p) => ({ id: p.id, code: p.code, name: p.name, kind: p.kind, locationName: p.locations.name, usesRadio: p.uses_radio, entranceId: p.entrance_id, entranceName: p.entrances?.name ?? null, sort: p.sort }));
 }
 
 /** Planeación de un servicio: lo que la persona puede ver según RLS (el borrador solo llega a quienes planifican). */

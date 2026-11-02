@@ -31,6 +31,9 @@ export type PlanPosition = {
   kind: "supervisor" | "voluntario";
   locationName: string;
   usesRadio: boolean;
+  /** Entrada que cuenta quien ocupa la posición (posición de conteo), con su nombre. */
+  entranceId: string | null;
+  entranceName: string | null;
   sort: number;
 };
 export type PlanAssignment = { id: string; positionId: string; userId: string };

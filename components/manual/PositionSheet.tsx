@@ -20,6 +20,7 @@ export function PositionSheet({ position, onClose }: { position: ViewerPosition 
               <span>{position.kind === "supervisor" ? "Supervisor" : "Voluntario"}</span>
               {position.zoneName && <span>· {position.zoneName}</span>}
               {position.usesRadio && <span className="rounded-full bg-badge px-2 py-0.5 text-on-badge">📻 Radio</span>}
+              {position.entranceId && <span className="rounded-full bg-badge px-2 py-0.5 text-on-badge">🔢 Posición de conteo</span>}
               {!position.isActive && <span className="rounded-full border border-line px-2 py-0.5">Oculta</span>}
             </p>
             <p className="whitespace-pre-line leading-relaxed">{position.description || <span className="text-muted">Sin descripción todavía.</span>}</p>
