@@ -3,6 +3,7 @@
 Manual de logística y servicio de **El Lugar de Su Presencia**: mapas, posiciones, indicaciones, novedades y chat con IA.
 El plan completo está en [`PLAN.md`](PLAN.md). Estado actual: **Fases 1 a 9** completas (base, login, permisos, manual con mapas y posiciones, fotos, videos, flujos, personas y grupos, novedades, rotación y servicio, el asistente de IA, reemplazos y apoyos, conteos y totales, y la aplicación instalable con avisos al teléfono). Queda pendiente la publicación ampliada a unas 2000 personas (Supabase Pro y sacar el consentimiento de Google del modo «Testing»).
 
+- **Documentación técnica:** [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) (cómo está armada), [`docs/FLUJO-DE-DATOS.md`](docs/FLUJO-DE-DATOS.md) (cómo viajan los datos) y [`docs/SEGURIDAD.md`](docs/SEGURIDAD.md) (permisos, secretos y protección de datos)
 - **App:** Next.js 16 (App Router) en Vercel · **Datos, login y archivos:** Supabase
 - `legacy/` — prototipo original (HTML estático) y las imágenes de mapas de Castellana
 - `supabase/migrations/` — esquema, permisos (RLS), acceso por invitación, storage y carga inicial
