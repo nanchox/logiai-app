@@ -207,3 +207,11 @@ export async function saveSteps(sb: SupabaseClient, flowId: string, steps: StepI
   if (withId.length) must(await sb.from("flow_steps").upsert(withId));
   if (without.length) must(await sb.from("flow_steps").insert(without));
 }
+
+/** Detalle de una zona: cómo ingresar, cómo evacuar y otros datos específicos. Lo escribe quien edita el manual. */
+export const MAX_ZONE_DETAIL = 5000;
+export async function saveZoneDetail(sb: SupabaseClient, zoneId: string, detail: string) {
+  if (detail.length > MAX_ZONE_DETAIL) throw new Error(`El detalle es demasiado largo (máximo ${MAX_ZONE_DETAIL} caracteres).`);
+  const rows = must(await sb.from("zones").update({ detail: detail.trim() }).eq("id", zoneId).select("id")) as unknown[];
+  if (!rows.length) throw new Error("No tienes permiso para cambiar esta zona.");
+}

@@ -3,7 +3,8 @@ export type MediaKind = "foto" | "youtube" | "link";
 export type Variant = "desktop" | "mobile";
 
 export type ViewerMap = { id: string; name: string; zoneId: string | null; isGeneral: boolean; url: string | null; version: number; imagePath: string };
-export type ViewerZone = { id: string; name: string; kind: string };
+/** `detail`: texto con datos de la zona (cómo ingresar, cómo evacuar…); el asistente también lo consulta. */
+export type ViewerZone = { id: string; name: string; kind: string; detail: string };
 export type ViewerMedia = {
   id: string;
   kind: MediaKind;

@@ -245,8 +245,10 @@ export function ManualClient({ siteSlug, locationId, canManage, maps, zones, ent
         <p className="rounded-2xl border border-line bg-surface p-5 text-muted">Este espacio aún no tiene mapas cargados.{canManage && !editing && " Pulsa «Editar» para agregar uno."}</p>
       )}
 
+      {!editing && <ZoneDetails zones={zones} map={map} />}
+
       {editing && (
-        <MapAdmin siteSlug={siteSlug} locationId={locationId} maps={maps} current={map} open={!map}
+        <MapAdmin siteSlug={siteSlug} locationId={locationId} maps={maps} zones={zones} current={map} open={!map}
           onChanged={(focus) => { if (focus) setMapId(focus); refresh(); }} />
       )}
 
@@ -275,6 +277,34 @@ export function ManualClient({ siteSlug, locationId, canManage, maps, zones, ent
         onChanged={(createdId) => { if (createdId) setEditor({ positionId: createdId }); refresh(); }}
       />
     </div>
+  );
+}
+
+/** Detalle de la zona del mapa que se ve (cómo ingresar, cómo evacuar…); en el mapa general, el de todas las zonas del espacio. */
+function ZoneDetails({ zones, map }: { zones: ViewerZone[]; map: ViewerMap | null }) {
+  const withDetail = zones.filter((z) => z.detail.trim());
+  if (!withDetail.length) return null;
+  const current = map?.zoneId ? withDetail.find((z) => z.id === map.zoneId) ?? null : null;
+  if (current) {
+    return (
+      <section aria-label={`Detalle de ${current.name}`} className="rounded-2xl border-2 border-accent bg-surface p-4">
+        <h2 className="text-lg font-extrabold">Detalle de {current.name}</h2>
+        <p className="mt-2 whitespace-pre-line break-words leading-relaxed">{current.detail}</p>
+      </section>
+    );
+  }
+  return (
+    <details className="rounded-2xl border border-line bg-surface p-4" aria-label="Detalle de las zonas">
+      <summary className="cursor-pointer font-bold">Detalle de las zonas ({withDetail.length})</summary>
+      <ul className="mt-3 space-y-4">
+        {withDetail.map((z) => (
+          <li key={z.id}>
+            <h3 className="font-extrabold">{z.name}</h3>
+            <p className="whitespace-pre-line break-words leading-relaxed">{z.detail}</p>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 

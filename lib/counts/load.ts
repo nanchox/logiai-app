@@ -84,10 +84,10 @@ export async function loadReservationOverrides(supabase: SupabaseClient, eventId
 
 /** Entradas de las ubicaciones que la persona ve (de la sede dada, si se indica). */
 export async function loadEntrances(supabase: SupabaseClient, locationIds?: string[]): Promise<Entrance[]> {
-  let q = supabase.from("entrances").select("id, location_id, name, note, sort");
+  let q = supabase.from("entrances").select("id, location_id, name, note, zones_text, sort");
   if (locationIds) { if (!locationIds.length) return []; q = q.in("location_id", locationIds); }
   const { data } = await q.order("sort").order("name");
-  return (data ?? []).map((e) => ({ id: e.id, locationId: e.location_id, name: e.name, note: e.note, sort: e.sort }));
+  return (data ?? []).map((e) => ({ id: e.id, locationId: e.location_id, name: e.name, note: e.note, zonesText: e.zones_text ?? null, sort: e.sort }));
 }
 
 /** Cupos estándar por entrada y reunión. */

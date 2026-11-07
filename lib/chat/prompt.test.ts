@@ -30,7 +30,7 @@ test("el mensaje al modelo lleva las fuentes numeradas, el contexto y la pregunt
   const m = buildMessages({
     question: "¿Dónde parqueo?", history: [{ role: "user", content: "hola" }, { role: "assistant", content: "¡Hola!" }],
     context: ["Sede: Castellana", "Grupo: Grupo 1"],
-    fragments: [{ kind: "posicion", title: "P1", body: "Cuerpo uno", href: "/x" }, { kind: "novedad", title: "N", body: "Cuerpo dos", href: "/novedades" }],
+    fragments: [{ kind: "posicion", title: "P1", body: "Cuerpo uno", href: "/x" }, { kind: "novedad", title: "N", body: "Cuerpo dos", href: "/novedades" }, { kind: "zona", title: "Zona 1 (Auditorio)", body: "Evacue por la salida norte", href: "/manual/c/l" }],
   });
   assert.equal(m[0].role, "system");
   assert.equal(m[0].content, SYSTEM_PROMPT);
@@ -38,6 +38,7 @@ test("el mensaje al modelo lleva las fuentes numeradas, el contexto y la pregunt
   const last = m[3].content;
   assert.match(last, /\[1\] \(posición del manual\) P1\nCuerpo uno/);
   assert.match(last, /\[2\] \(novedad\) N\nCuerpo dos/);
+  assert.match(last, /\[3\] \(detalle de una zona\) Zona 1 \(Auditorio\)\nEvacue por la salida norte/);
   assert.match(last, /- Sede: Castellana/);
   assert.match(last, /PREGUNTA: ¿Dónde parqueo\?$/);
   assert.match(SYSTEM_PROMPT, /ÚNICAMENTE/);
@@ -49,6 +50,8 @@ test("el mensaje al modelo lleva las fuentes numeradas, el contexto y la pregunt
 test("los enlaces de las fuentes los arma el servidor", () => {
   assert.equal(hrefFor({ kind: "posicion", site_slug: "castellana", location_id: "L1" }), "/manual/castellana/L1");
   assert.equal(hrefFor({ kind: "flujo", site_slug: "suba", location_id: null }), "/manual/suba/flujos");
+  assert.equal(hrefFor({ kind: "zona", site_slug: "castellana", location_id: "L1" }), "/manual/castellana/L1", "el detalle de una zona lleva al espacio");
+  assert.equal(hrefFor({ kind: "entrada", site_slug: "castellana", location_id: "L1" }), "/manual/castellana/L1");
   assert.equal(hrefFor({ kind: "novedad", site_slug: null, location_id: null }), "/novedades");
   assert.equal(hrefFor({ kind: "posicion", site_slug: null, location_id: null }), "/novedades");
 });

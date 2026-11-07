@@ -12,7 +12,7 @@ export function guideFor(u: GuideUser): string[] {
   const lines = [
     "Inicio: saludo, tu grupo, tu próximo servicio y las novedades recientes.",
     "Novedades: noticias, cambios y avisos de la iglesia, tu sede, tu día o tu grupo, con enlaces.",
-    "Manual: mapas con las posiciones de tu sede (pines), cada posición con su descripción, fotos, videos de YouTube y uso de radio; también los flujos (qué hacer, por ejemplo, cuando se llena el auditorio principal). Se puede filtrar por día y franja.",
+    "Manual: mapas con las posiciones de tu sede (pines), cada posición con su descripción, fotos, videos de YouTube y uso de radio; cada zona tiene su detalle (cómo ingresar, cómo evacuar y otros datos de esa zona) que se ve al abrir su mapa y que también puedes preguntarme; también los flujos (qué hacer, por ejemplo, cuando se llena el auditorio principal). Se puede filtrar por día y franja.",
     "Mi servicio: cuándo sirve tu grupo (calendario de las próximas semanas, con las fechas canceladas), las posiciones que te asignaron cuando la planeación está publicada, y tu historial de posiciones. Si otro grupo de tu sede pide apoyo, aquí (y en Inicio) ves la solicitud y puedes postularte con «Quiero apoyar»; puedes retirarte hasta el día anterior.",
     "Conteos: en la página de tu servicio ves la guía de conteo (imagen) que indica cómo contar en cada entrada de tu sede ese día.",
     "Asistente (este chat: en el celular, la barra de preguntas de abajo; en el computador, el panel a un lado, y el botón «Asistente» del menú lo abre o lo cierra): resuelve dudas con lo que está cargado en la aplicación y sigue contigo al cambiar de pantalla.",

@@ -68,17 +68,25 @@ export async function saveServiceReservations(sb: SupabaseClient, eventId: strin
 }
 
 // ───────────── Entradas ─────────────
-export async function createEntrance(sb: SupabaseClient, locationId: string, name: string, note: string) {
+export async function createEntrance(sb: SupabaseClient, locationId: string, name: string, note: string, zonesText = "") {
   if (!name.trim()) throw new Error("Escribe el nombre de la entrada.");
   if (name.trim().length > 60) throw new Error("El nombre de la entrada es demasiado largo (máximo 60 caracteres).");
   if (note.trim().length > 200) throw new Error("La nota es demasiado larga (máximo 200 caracteres).");
-  const { error } = await sb.from("entrances").insert({ location_id: locationId, name: name.trim(), note: note.trim() || null });
+  if (zonesText.trim().length > 300) throw new Error("Las zonas de la entrada son demasiado largas (máximo 300 caracteres).");
+  const { error } = await sb.from("entrances").insert({ location_id: locationId, name: name.trim(), note: note.trim() || null, zones_text: zonesText.trim() || null });
   if (error) throw explain(error);
 }
-export async function updateEntrance(sb: SupabaseClient, id: string, name: string, note: string) {
+export async function updateEntrance(sb: SupabaseClient, id: string, name: string, note: string, zonesText = "") {
   if (!name.trim()) throw new Error("Escribe el nombre de la entrada.");
   if (note.trim().length > 200) throw new Error("La nota es demasiado larga (máximo 200 caracteres).");
-  const { error } = await sb.from("entrances").update({ name: name.trim(), note: note.trim() || null }).eq("id", id);
+  if (zonesText.trim().length > 300) throw new Error("Las zonas de la entrada son demasiado largas (máximo 300 caracteres).");
+  const { error } = await sb.from("entrances").update({ name: name.trim(), note: note.trim() || null, zones_text: zonesText.trim() || null }).eq("id", id);
+  if (error) throw explain(error);
+}
+/** Conteo a mano por entrada y reunión (todo o nada). count nulo borra el conteo de esa entrada. meetingId = ceros cuando el servicio no tiene reuniones. */
+export async function saveEntranceCounts(sb: SupabaseClient, eventId: string, items: { entranceId: string; meetingId: string; count: number | null }[]) {
+  if (items.some((i) => i.count !== null && (!Number.isInteger(i.count) || i.count < 0 || i.count > 100000))) throw new Error("El conteo debe ser un número entero entre 0 y 100000.");
+  const { error } = (await sb.rpc("save_entrance_counts", { p_event: eventId, p_items: items.map((i) => ({ entrance_id: i.entranceId, meeting_id: i.meetingId, count: i.count })) })) as { error: PgError };
   if (error) throw explain(error);
 }
 export async function deleteEntrance(sb: SupabaseClient, id: string) {

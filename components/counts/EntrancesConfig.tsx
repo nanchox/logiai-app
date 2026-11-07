@@ -47,6 +47,7 @@ function LocationEntrances({ location, entrances, quotas, slots, meetings, zones
   const { busy, error, done, run } = useAction();
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
+  const [zonesText, setZonesText] = useState("");
   return (
     <article className="space-y-3 rounded-xl border border-line bg-bg p-4" aria-label={`Entradas de ${location.name}`}>
       <h4 className="font-bold">{location.name} <span className="text-sm font-normal text-muted">· aforo {location.capacity ?? "sin registrar"}</span></h4>
@@ -55,7 +56,7 @@ function LocationEntrances({ location, entrances, quotas, slots, meetings, zones
           {entrances.map((e) => <EntranceRow key={e.id} entrance={e} />)}
         </ul>
       )}
-      <form className="flex flex-wrap items-end gap-2" aria-label={`Agregar entrada a ${location.name}`} onSubmit={(ev) => { ev.preventDefault(); run(async () => { await createEntrance(sb, location.id, name, note); setName(""); setNote(""); }); }}>
+      <form className="flex flex-wrap items-end gap-2" aria-label={`Agregar entrada a ${location.name}`} onSubmit={(ev) => { ev.preventDefault(); run(async () => { await createEntrance(sb, location.id, name, note, zonesText); setName(""); setNote(""); setZonesText(""); }); }}>
         <div className="min-w-40 flex-1">
           <label className={label} htmlFor={`en-${location.id}`}>Nueva entrada</label>
           <input id={`en-${location.id}`} className={input} value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder="Entrada izquierda" />
@@ -63,6 +64,10 @@ function LocationEntrances({ location, entrances, quotas, slots, meetings, zones
         <div className="min-w-48 flex-[2]">
           <label className={label} htmlFor={`enn-${location.id}`}>Quiénes ingresan (nota)</label>
           <input id={`enn-${location.id}`} className={input} value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="Asistentes de la iglesia" />
+        </div>
+        <div className="min-w-48 flex-[2]">
+          <label className={label} htmlFor={`enz-${location.id}`}>Zonas que atiende</label>
+          <input id={`enz-${location.id}`} className={input} value={zonesText} maxLength={300} onChange={(e) => setZonesText(e.target.value)} placeholder="Zonas A y B, lado izquierdo" />
         </div>
         <button className={btn} disabled={busy || !name.trim()}>＋ Agregar entrada</button>
       </form>
@@ -84,13 +89,15 @@ function EntranceRow({ entrance }: { entrance: Entrance }) {
   const { busy, error, run } = useAction();
   const [name, setName] = useState(entrance.name);
   const [note, setNote] = useState(entrance.note ?? "");
-  const dirty = name.trim() !== entrance.name || note.trim() !== (entrance.note ?? "");
+  const [zonesText, setZonesText] = useState(entrance.zonesText ?? "");
+  const dirty = name.trim() !== entrance.name || note.trim() !== (entrance.note ?? "") || zonesText.trim() !== (entrance.zonesText ?? "");
   return (
     <li className="space-y-1">
       <div className="flex flex-wrap items-center gap-2">
         <input className={`${input} w-48`} aria-label={`Nombre de la entrada ${entrance.name}`} value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
         <input className={`${input} min-w-48 flex-1`} aria-label={`Nota de ${entrance.name}`} value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="Quiénes ingresan" />
-        <button type="button" className={btn} disabled={busy || !dirty || !name.trim()} onClick={() => run(() => updateEntrance(sb, entrance.id, name, note))}>Guardar</button>
+        <input className={`${input} min-w-48 flex-1`} aria-label={`Zonas que atiende ${entrance.name}`} value={zonesText} maxLength={300} onChange={(e) => setZonesText(e.target.value)} placeholder="Zonas que atiende" />
+        <button type="button" className={btn} disabled={busy || !dirty || !name.trim()} onClick={() => run(() => updateEntrance(sb, entrance.id, name, note, zonesText))}>Guardar</button>
         <button type="button" className={btnDanger} disabled={busy} aria-label={`Eliminar la entrada ${entrance.name}`}
           onClick={() => { if (window.confirm(`¿Eliminar la entrada «${entrance.name}» y sus cupos?`)) run(() => deleteEntrance(sb, entrance.id)); }}>Eliminar</button>
       </div>
@@ -131,7 +138,7 @@ function QuotaTable({ slot, location, entrances, quotas, meetings }: { slot: Slo
           <tbody className="divide-y divide-line">
             {entrances.map((e) => (
               <tr key={e.id}>
-                <th scope="row" className="p-2 font-semibold">{e.name}{e.note && <span className="block text-xs font-normal text-muted">{e.note}</span>}</th>
+                <th scope="row" className="p-2 font-semibold">{e.name}{e.note && <span className="block text-xs font-normal text-muted">{e.note}</span>}{e.zonesText && <span className="block text-xs font-normal text-muted">Zonas: {e.zonesText}</span>}</th>
                 {meetings.map((m) => (
                   <td key={m.id} className="p-2">
                     <input type="number" inputMode="numeric" min={0} max={100000} className={`${input} ${bad(key(e.id, m.id)) ? "!border-danger" : ""}`} aria-label={`Cupo de ${e.name} a las ${formatMeetingTime(m.time)} (${title})`}
