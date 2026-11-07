@@ -2184,3 +2184,73 @@ test('contador digital · quién cuenta, tope por cupo y aforo, idempotencia y t
   assert.ok(cr.length >= 2 && cr.some((r) => r.entrance_id === entD) && cr.find((r) => r.entrance_id === entI).assigned === false, 'quien planifica: todas las de su sede');
   assert.deepEqual(await mine(U.vR2), []);
 });
+
+test('detalle de zona, zonas de la entrada y conteo por entrada a mano', async () => {
+  const zone = (await one(`insert into public.zones (location_id, name) values ($1, 'Zona con detalle') returning id`, [U.locA])).id;
+  const setDetail = (uid, text) => as(uid, async () => (await db.query(`update public.zones set detail = $2 where id = $1`, [zone, text])).affectedRows);
+  // Quién escribe el detalle de una zona: quien edita el manual
+  assert.equal(await setDetail(U.liderCamp, 'Para ingresar use la puerta lateral. Para evacuar salga por la salida de emergencia norte y reúnase en el parqueadero.'), 1);
+  assert.equal(await setDetail(U.admin, 'Para ingresar use la puerta lateral. Para evacuar salga por la salida de emergencia norte y reúnase en el parqueadero.'), 1);
+  assert.equal(await setDetail(U.cR1, 'x'), 0, 'el coordinador no');
+  assert.equal(await setDetail(U.vR1, 'x'), 0);
+  assert.equal(await setDetail(U.liderNogal2, 'x'), 0, 'el líder de otra sede no');
+  await denied(() => setDetail(U.liderCamp, 'x'.repeat(5001)), /check/);
+  const detailSeen = (uid) => as(uid, async () => (await rows(`select detail from public.zones where id = $1`, [zone])).map((r) => r.detail.length > 0));
+  assert.deepEqual(await detailSeen(U.vR1), [true], 'quienes sirven en la sede lo leen');
+  assert.deepEqual(await detailSeen(U.vol1), [], 'otra sede no ve la zona');
+  // El asistente lo encuentra, con los permisos de quien pregunta
+  const search = (uid, q) => as(uid, async () => (await rows(`select kind, title, location_id from public.search_manual($1, 8)`, [q])));
+  const hit = await search(U.vR1, 'cómo evacuar por la salida de emergencia');
+  assert.ok(hit.some((r) => r.kind === 'zona' && r.title.startsWith('Zona con detalle') && r.location_id === U.locA), 'la zona aparece en la búsqueda del asistente');
+  assert.equal((await search(U.vol1, 'cómo evacuar por la salida de emergencia')).filter((r) => r.kind === 'zona').length, 0, 'quien no ve la sede no la encuentra');
+  assert.equal((await search(U.vR1, 'parqueadero')).filter((r) => r.kind === 'zona').length, 1);
+  await db.query(`update public.zones set detail = '' where id = $1`, [zone]);
+  assert.equal((await search(U.vR1, 'parqueadero')).filter((r) => r.kind === 'zona').length, 0, 'sin detalle no aparece');
+
+  // Entrada: zonas que atiende (texto) y nota; también las encuentra el asistente
+  const ent = (await one(`insert into public.entrances (location_id, name, note, zones_text) values ($1, 'Entrada de zonas', 'Familias con niños', 'Zonas 1 a 3 y la galería') returning id`, [U.locB])).id;
+  await denied(() => as(U.liderCamp, () => db.query(`update public.entrances set zones_text = $2 where id = $1`, [ent, 'z'.repeat(301)])), /check/);
+  assert.equal(await as(U.cR1, async () => (await db.query(`update public.entrances set zones_text = 'x' where id = $1`, [ent])).affectedRows), 0);
+  const eh = await search(U.vR1, 'galería familias con niños');
+  assert.ok(eh.some((r) => r.kind === 'entrada' && r.title.startsWith('Entrada de zonas')), 'la entrada aparece en la búsqueda del asistente');
+
+  // Conteo por entrada a mano
+  const m1 = (await one(`select id from public.slot_meetings where slot_id = $1 order by start_time limit 1`, [U.slotCamp])).id;
+  const entB = (await one(`insert into public.entrances (location_id, name) values ($1, 'Entrada manual B') returning id`, [U.locB])).id;
+  const cap = Number((await one(`select capacity from public.locations where id = $1`, [U.locB])).capacity);        // 120
+  await db.query(`delete from public.entrance_counters where event_id = $1 and entrance_id in (select id from public.entrances where location_id = $2)`, [U.evToday, U.locB]);
+  await db.query(`delete from public.service_counts where event_id = $1 and location_id = $2 and meeting_id is not null`, [U.evToday, U.locB]);
+  await db.query(`insert into public.entrance_quotas (entrance_id, meeting_id, quota) values ($1, $3, 60), ($2, $3, 90) on conflict do nothing`, [ent, entB, m1]);
+  const save = (uid, ev, arr) => rpc(uid, `select public.save_entrance_counts($1, $2::jsonb)`, [ev, JSON.stringify(arr)]);
+  const counter = async (e) => (await one(`select count from public.entrance_counters where event_id = $1 and entrance_id = $2 and meeting_id = $3`, [U.evToday, e, m1]))?.count;
+  const lugar = async () => (await one(`select total from public.service_counts where event_id = $1 and location_id = $2 and meeting_id = $3`, [U.evToday, U.locB, m1]))?.total;
+  await save(U.cR1, U.evToday, [{ entrance_id: ent, meeting_id: m1, count: 40 }, { entrance_id: entB, meeting_id: m1, count: 70 }]);
+  assert.deepEqual([await counter(ent), await counter(entB), await lugar()], [40, 70, 110], 'escribe el conteo de cada entrada y pasa el total del lugar a los totales del servicio');
+  await save(U.liderCamp, U.evToday, [{ entrance_id: ent, meeting_id: m1, count: 50 }]);
+  assert.equal(await lugar(), 120, 'corregir una entrada actualiza el total');
+  // Quién y cuándo
+  await denied(() => save(U.vR1, U.evToday, [{ entrance_id: ent, meeting_id: m1, count: 1 }]), /No puedes registrar/);
+  await denied(() => save(U.cR2, U.evToday, [{ entrance_id: ent, meeting_id: m1, count: 1 }]), /No puedes registrar/);
+  await denied(() => save(U.liderNogal2, U.evToday, [{ entrance_id: ent, meeting_id: m1, count: 1 }]), /No puedes registrar/);
+  // Tope por cupo (60) y por aforo (120 entre las dos), todo o nada
+  await denied(() => save(U.cR1, U.evToday, [{ entrance_id: ent, meeting_id: m1, count: 61 }]), /no puede superar su cupo \(60\)/);
+  await denied(() => save(U.cR1, U.evToday, [{ entrance_id: ent, meeting_id: m1, count: 60 }, { entrance_id: entB, meeting_id: m1, count: 90 }]), /suman 150 y el aforo es 120/);
+  assert.deepEqual([await counter(ent), await counter(entB)], [50, 70], 'si falla, no se guarda ninguno');
+  await denied(() => save(U.cR1, U.evToday, [{ entrance_id: ent, meeting_id: m1, count: -1 }]), /entero entre 0 y 100000/);
+  await denied(() => save(U.cR1, U.evToday, [{ entrance_id: ent, meeting_id: m1, count: '5' }]), /entero entre 0 y 100000/);
+  await denied(() => save(U.cR1, U.evToday, [{ entrance_id: 'x', meeting_id: m1, count: 1 }]), /no son válidos/);
+  await denied(() => save(U.cR1, U.evToday, { entrance_id: ent }), /no son válidos/);
+  await denied(() => save(U.cR1, U.evToday, [{ entrance_id: ent, meeting_id: 'a0000000-0000-4000-8000-000000000000', count: 1 }]), /no es de este servicio/);
+  const entOther = (await one(`insert into public.entrances (location_id, name) values ($1, 'Entrada de otra sede') returning id`, [U.locCas])).id;
+  await denied(() => save(U.cR1, U.evToday, [{ entrance_id: entOther, meeting_id: m1, count: 1 }]), /no es de la sede/, 'entrada de otra sede');
+  // Convive con el contador digital (sigue desde lo escrito) y deja registro
+  const op = crypto.randomUUID();
+  const r = (await rpc(U.cR1, `select public.apply_entrance_delta($1, $2, $3, -2, $4) as r`, [U.evToday, ent, m1, op]))[0].r;
+  assert.equal(r.count, 48, 'el contador sigue desde lo escrito a mano');
+  assert.ok(Number((await one(`select count(*) n from public.entrance_count_ops where event_id = $1 and entrance_id = $2`, [U.evToday, ent])).n) >= 3, 'cada cambio queda registrado');
+  // Un valor nulo borra el conteo de esa entrada y actualiza el total
+  await save(U.cR1, U.evToday, [{ entrance_id: ent, meeting_id: m1, count: null }]);
+  assert.deepEqual([await counter(ent), await lugar()], [undefined, 70]);
+  await save(U.cR1, U.evToday, [{ entrance_id: entB, meeting_id: m1, count: null }]);
+  assert.equal(await lugar(), undefined, 'sin conteos en el lugar, se quita su total de la reunión');
+});

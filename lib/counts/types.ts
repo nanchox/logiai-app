@@ -9,7 +9,7 @@ export type ReservationZone = { id: string; siteId: string; locationId: string; 
 /** meetingId nulo = todas las reuniones del día. */
 export type ReservationDefault = { zoneId: string; day: string; meetingId: string | null; seats: number };
 export type ReservationOverride = { zoneId: string; meetingId: string | null; seats: number };
-export type Entrance = { id: string; locationId: string; name: string; note: string | null; sort: number };
+export type Entrance = { id: string; locationId: string; name: string; note: string | null; zonesText: string | null; sort: number };
 /** Cupo estándar de una entrada en una reunión de un horario. */
 export type EntranceQuota = { entranceId: string; meetingId: string; quota: number };
 /** Ajuste del cupo de una entrada en una reunión de un servicio concreto. */

@@ -134,7 +134,7 @@ export function EntranceCounter({ eventId, entranceId, initial, backHref }: { ev
         <Link href={backHref} className="rounded-lg border border-line px-3 py-2 text-sm font-bold no-underline">← Salir</Link>
         <div className="min-w-0 flex-1">
           <p className="truncate text-base font-extrabold">{initial.entranceName}</p>
-          <p className="truncate text-xs text-muted">{initial.locationName}{initial.note ? ` · ${initial.note}` : ""}</p>
+          <p className="truncate text-xs text-muted">{initial.locationName}{initial.note ? ` · ${initial.note}` : ""}{initial.zones ? ` · Zonas: ${initial.zones}` : ""}</p>
         </div>
         <span role="status" className={`rounded-full border px-2.5 py-1 text-xs font-bold ${online ? "border-primary/60 text-fg" : "border-danger/60 text-danger"}`}>
           {online ? (pendingTotal ? "Enviando…" : "En línea") : `Sin conexión${pendingTotal ? ` · ${pendingTotal} por enviar` : ""}`}

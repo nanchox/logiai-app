@@ -16,7 +16,7 @@ export async function loadCounterState(supabase: SupabaseClient, eventId: string
   const rows = (data ?? []) as Record<string, unknown>[];
   if (error || !rows.length) return null;
   return {
-    entranceName: rows[0].entrance_name as string, note: (rows[0].entrance_note as string | null) ?? null, locationName: rows[0].location_name as string,
+    entranceName: rows[0].entrance_name as string, note: (rows[0].entrance_note as string | null) ?? null, zones: (rows[0].entrance_zones as string | null) ?? null, locationName: rows[0].location_name as string,
     capacity: (rows[0].location_capacity as number | null) ?? null,
     meetings: rows.map((r) => ({
       meetingId: r.meeting_id as string, time: r.meeting_time ? String(r.meeting_time).slice(0, 5) : null, label: (r.meeting_label as string | null) ?? null,

@@ -10,7 +10,7 @@ import { addDays, formatServiceDate } from "@/lib/service/dates";
 import type { Meeting } from "@/lib/service/meetings";
 import type { CountGuide, CountLocation, CountLogEntry, CountRow, Entrance, EntranceCounterRow, EntranceQuota, EventQuota, ReservationDefault, ReservationOverride, ReservationZone } from "@/lib/counts/types";
 import { BalanceSummary } from "./BalanceSummary";
-import { DigitalCounts } from "./DigitalCounts";
+import { EntranceCountsForm } from "./EntranceCountsForm";
 import { EventQuotas } from "./EventQuotas";
 import { ReservationsForm } from "./ReservationsForm";
 import { type CountWindow } from "@/lib/counts/window";
@@ -130,8 +130,8 @@ export function CountPanel({
         <BalanceSummary locations={locations} entrances={entrances} zones={zones} meetings={meetings} day={day} standardQuotas={standardQuotas} eventQuotas={eventQuotas} defaults={reservationDefaults} overrides={reservations} roleReservations={roleReservations} />
       )}
 
-      {canSeeCounts && entranceCounters.length > 0 && (
-        <DigitalCounts locations={locations} entrances={entrances} meetings={meetings} counters={entranceCounters} standard={standardQuotas} overrides={eventQuotas} />
+      {canSeeCounts && entrances.length > 0 && (
+        <EntranceCountsForm eventId={eventId} locations={locations} entrances={entrances} meetings={meetings} counters={entranceCounters} standard={standardQuotas} overrides={eventQuotas} canEdit={canCount} />
       )}
 
       {manager && log.length > 0 && (

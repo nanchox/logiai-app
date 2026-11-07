@@ -14,7 +14,7 @@ export async function loadLocation(supabase: SupabaseClient, locationId: string,
 
   const [mapsRes, zonesRes, positionsRes] = await Promise.all([
     supabase.from("maps").select("id, name, zone_id, image_path, image_version, sort").eq("location_id", locationId).order("sort"),
-    supabase.from("zones").select("id, name, kind").eq("location_id", locationId).order("sort"),
+    supabase.from("zones").select("id, name, kind, detail").eq("location_id", locationId).order("sort"),
     includeInactive ? positionsQuery : positionsQuery.eq("is_active", true),
   ]);
   const maps = mapsRes.data ?? [];
@@ -58,7 +58,7 @@ export async function loadLocation(supabase: SupabaseClient, locationId: string,
     version: m.image_version,
     imagePath: m.image_path,
   }));
-  const viewerZones: ViewerZone[] = (zonesRes.data ?? []).map((z) => ({ id: z.id, name: z.name, kind: z.kind }));
+  const viewerZones: ViewerZone[] = (zonesRes.data ?? []).map((z) => ({ id: z.id, name: z.name, kind: z.kind, detail: z.detail ?? "" }));
   const viewerPositions: ViewerPosition[] = positions.map((p) => ({
     id: p.id,
     code: p.code,

@@ -3,14 +3,14 @@
 import { useState } from "react";
 import { ZONE_KIND_LABEL } from "@/lib/labels";
 import { createClient } from "@/lib/supabase/client";
-import { createMap, createZoneWithMap, deleteMap, renameMap, replaceMapImage } from "@/lib/manual/mutations";
-import type { ViewerMap } from "@/lib/manual/types";
+import { createMap, createZoneWithMap, deleteMap, MAX_ZONE_DETAIL, renameMap, replaceMapImage, saveZoneDetail } from "@/lib/manual/mutations";
+import type { ViewerMap, ViewerZone } from "@/lib/manual/types";
 import { btn, btnDanger, btnPrimary, ErrorText, input, label } from "./ui";
 
-type Props = { siteSlug: string; locationId: string; maps: ViewerMap[]; current: ViewerMap | null; open?: boolean; onChanged: (focusMapId?: string) => void };
+type Props = { siteSlug: string; locationId: string; maps: ViewerMap[]; zones?: ViewerZone[]; current: ViewerMap | null; open?: boolean; onChanged: (focusMapId?: string) => void };
 
 /** Alta, reemplazo, renombrado y baja de mapas y zonas de un espacio. */
-export function MapAdmin({ siteSlug, locationId, maps, current, open, onChanged }: Props) {
+export function MapAdmin({ siteSlug, locationId, maps, zones = [], current, open, onChanged }: Props) {
   const sb = createClient();
   // Abierto desde el inicio si el espacio no tiene mapas; después solo lo cambia el usuario (no se cierra al subir el primero).
   const [initiallyOpen] = useState(!!open);
@@ -20,6 +20,10 @@ export function MapAdmin({ siteSlug, locationId, maps, current, open, onChanged 
   const [kind, setKind] = useState("acomodacion");
   const [file, setFile] = useState<File | null>(null);
   const [rename, setRename] = useState("");
+  const currentZone = zones.find((z) => z.id === current?.zoneId) ?? null;
+  const [detail, setDetail] = useState<{ zoneId: string | null; text: string }>({ zoneId: null, text: "" });
+  // El cuadro parte del detalle guardado de la zona actual y se reinicia al cambiar de zona
+  const detailText = detail.zoneId === (currentZone?.id ?? null) ? detail.text : (currentZone?.detail ?? "");
   const hasGeneral = maps.some((m) => m.isGeneral);
 
   async function run(fn: () => Promise<string | void>) {
@@ -59,6 +63,16 @@ export function MapAdmin({ siteSlug, locationId, maps, current, open, onChanged 
               }}>Eliminar este mapa</button>
             </div>
           </div>
+        )}
+
+        {currentZone && (
+          <form className="space-y-2 border-t border-line pt-4" aria-label={`Detalle de ${currentZone.name}`} onSubmit={(e) => { e.preventDefault(); run(async () => { await saveZoneDetail(sb, currentZone.id, detailText); }); }}>
+            <label className={label} htmlFor="ma-detail">Detalle de la zona</label>
+            <textarea id="ma-detail" className={`${input} min-h-48`} maxLength={MAX_ZONE_DETAIL} value={detailText} placeholder="Cómo ingresar a esta zona, cómo evacuarla, puntos de encuentro, salidas, indicaciones especiales…"
+              onChange={(e) => setDetail({ zoneId: currentZone.id, text: e.target.value })} />
+            <p className="text-xs text-muted">{detailText.length} de {MAX_ZONE_DETAIL} caracteres. Lo ve todo el equipo de la sede en el manual y el asistente (chat) lo puede consultar.</p>
+            <button className={btn} disabled={busy || detailText.trim() === currentZone.detail.trim()}>Guardar detalle</button>
+          </form>
         )}
 
         <form className="space-y-3 border-t border-line pt-4" aria-label="Nuevo mapa" onSubmit={(e) => {

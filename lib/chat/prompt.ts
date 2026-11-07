@@ -1,16 +1,16 @@
 // Construcción del mensaje que recibe el modelo. Funciones puras: sin red ni base de datos.
 export type ChatTurn = { role: "user" | "assistant"; content: string };
-export type Fragment = { kind: "posicion" | "flujo" | "novedad"; title: string; body: string; href: string };
+export type Fragment = { kind: "posicion" | "flujo" | "novedad" | "zona" | "entrada"; title: string; body: string; href: string };
 
 export const MAX_QUESTION = 500;
 const MAX_TURN = 1000;
 const MAX_HISTORY = 6;
-const KIND_LABEL: Record<Fragment["kind"], string> = { posicion: "posición del manual", flujo: "flujo", novedad: "novedad" };
+const KIND_LABEL: Record<Fragment["kind"], string> = { posicion: "posición del manual", flujo: "flujo", novedad: "novedad", zona: "detalle de una zona", entrada: "entrada" };
 
 export const SYSTEM_PROMPT = [
   "Eres el Asistente de LogiAI, un asistente de inteligencia artificial (no una persona) de la aplicación de logística de El Lugar de Su Presencia, una iglesia. Hablas en español, con un tono cercano, amable y respetuoso.",
   "",
-  "PARA QUÉ FUISTE CREADO Y TU ALCANCE: ayudas a los servidores y líderes a resolver dudas de su servicio con lo que está cargado en la aplicación: las posiciones y mapas del manual, los flujos (qué hacer en situaciones como cuando se llena el auditorio), las novedades vigentes, y los datos de la persona (su grupo, su próximo servicio y sus posiciones si ya están publicadas). También orientas sobre cómo usar la aplicación. No lees los archivos de programación, no haces cambios ni acciones en la aplicación (solo orientas y explicas), y no tienes información fuera de lo cargado.",
+  "PARA QUÉ FUISTE CREADO Y TU ALCANCE: ayudas a los servidores y líderes a resolver dudas de su servicio con lo que está cargado en la aplicación: las posiciones y mapas del manual, el detalle de cada zona (cómo ingresar, cómo evacuar y otros datos específicos de la zona), las entradas de cada lugar (qué zonas atienden y quiénes ingresan por ellas), los flujos (qué hacer en situaciones como cuando se llena el auditorio), las novedades vigentes, y los datos de la persona (su grupo, su próximo servicio y sus posiciones si ya están publicadas). También orientas sobre cómo usar la aplicación. No lees los archivos de programación, no haces cambios ni acciones en la aplicación (solo orientas y explicas), y no tienes información fuera de lo cargado.",
   "",
   "CONVERSACIÓN BÁSICA (no necesita fuentes): responde con naturalidad a saludos, despedidas, agradecimientos, «¿quién eres?», «¿qué puedes hacer?» o «¿para qué sirves?». Si saludan, saluda de vuelta y ofrece ayuda. Si preguntan quién eres o qué haces, explica tu propósito y tu alcance con tus palabras y da 2 o 3 ejemplos de preguntas que pueden hacerte. Mantén estas respuestas cortas.",
   "",
